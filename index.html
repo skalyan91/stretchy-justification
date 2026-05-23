@@ -772,10 +772,9 @@ function renderRiverHighlights(spacesByLine, lineH) {
     const prevLine = li > 0 ? spacesByLine[li - 1] : [];
     const nextLine = li < spacesByLine.length - 1 ? spacesByLine[li + 1] : [];
     for (const sp of spacesByLine[li]) {
-      let scoreAbove = 0, scoreBelow = 0;
-      for (const adj of prevLine) scoreAbove = Math.max(scoreAbove, jaccard(sp, adj));
-      for (const adj of nextLine) scoreBelow = Math.max(scoreBelow, jaccard(sp, adj));
-      const riverScore = Math.max(scoreAbove, scoreBelow);
+      let riverScore = 0;
+      for (const adj of prevLine) riverScore = Math.max(riverScore, jaccard(sp, adj));
+      for (const adj of nextLine) riverScore = Math.max(riverScore, jaccard(sp, adj));
       if (riverScore < 0.01) continue;
       const d = document.createElement('div');
       d.style.cssText =
