@@ -235,18 +235,23 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 36px 20px 80px;
+      padding: 0 20px 80px;
     }
     .panel + .panel { border-left: 1px solid var(--border); }
 
     .panel-label {
-      align-self: flex-start;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      align-self: stretch;
+      margin: 0 -20px;
+      padding: 36px 20px 24px;
+      background: linear-gradient(to bottom, var(--panel) 60%, transparent);
       font-size: 9px;
       font-weight: 700;
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: var(--muted);
-      margin-bottom: 24px;
     }
 
     /* ── Text column ─────────────────────────────────────── */
@@ -376,9 +381,13 @@
         flex: 1;
         min-height: 0;
         overflow-y: auto;
-        padding: 20px 16px 36px;
+        padding: 0 16px 36px;
       }
       .panel + .panel { border-left: none; border-top: 1px solid var(--border); }
+      .panel-label {
+        margin: 0 -16px;
+        padding: 20px 16px 18px;
+      }
 
       .cw-slider-item { display: none; }
     }
