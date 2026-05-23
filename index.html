@@ -246,8 +246,6 @@
       align-self: stretch;
       margin: 0 -20px;
       padding: 36px 20px 24px;
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
       background: linear-gradient(to bottom,
         color-mix(in srgb, var(--bg), transparent 15%)    0%,
         color-mix(in srgb, var(--bg), transparent 15%)   60%,
@@ -264,6 +262,37 @@
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: var(--muted);
+    }
+    .panel-label::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      mask-image: linear-gradient(to bottom,
+        black                  0%,
+        black                 60%,
+        rgba(0,0,0,0.935)     65%,
+        rgba(0,0,0,0.866)     70%,
+        rgba(0,0,0,0.791)     75%,
+        rgba(0,0,0,0.707)     80%,
+        rgba(0,0,0,0.612)     85%,
+        rgba(0,0,0,0.500)     90%,
+        rgba(0,0,0,0.354)     95%,
+        transparent          100%);
+      -webkit-mask-image: linear-gradient(to bottom,
+        black                  0%,
+        black                 60%,
+        rgba(0,0,0,0.935)     65%,
+        rgba(0,0,0,0.866)     70%,
+        rgba(0,0,0,0.791)     75%,
+        rgba(0,0,0,0.707)     80%,
+        rgba(0,0,0,0.612)     85%,
+        rgba(0,0,0,0.500)     90%,
+        rgba(0,0,0,0.354)     95%,
+        transparent          100%);
+      pointer-events: none;
     }
 
     /* ── Text column ─────────────────────────────────────── */
