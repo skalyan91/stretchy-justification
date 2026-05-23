@@ -763,19 +763,19 @@ function renderSpaceHighlights(spacesByLine, lineH, naturalSpW) {
 }
 
 function renderRiverHighlights(spacesByLine, lineH) {
+  function jaccard(sp, adj) {
+    const ov = Math.min(sp.right, adj.right) - Math.max(sp.left, adj.left);
+    if (ov <= 0) return 0;
+    return ov / (sp.width + adj.width - ov);
+  }
   for (let li = 0; li < spacesByLine.length; li++) {
     const prevLine = li > 0 ? spacesByLine[li - 1] : [];
     const nextLine = li < spacesByLine.length - 1 ? spacesByLine[li + 1] : [];
     for (const sp of spacesByLine[li]) {
-      let riverScore = 0;
-      for (const adj of prevLine) {
-        const ov = Math.min(sp.right, adj.right) - Math.max(sp.left, adj.left);
-        if (ov > 0) riverScore = Math.max(riverScore, ov / Math.max(sp.width, adj.width));
-      }
-      for (const adj of nextLine) {
-        const ov = Math.min(sp.right, adj.right) - Math.max(sp.left, adj.left);
-        if (ov > 0) riverScore = Math.max(riverScore, ov / Math.max(sp.width, adj.width));
-      }
+      let scoreAbove = 0, scoreBelow = 0;
+      for (const adj of prevLine) scoreAbove = Math.max(scoreAbove, jaccard(sp, adj));
+      for (const adj of nextLine) scoreBelow = Math.max(scoreBelow, jaccard(sp, adj));
+      const riverScore = Math.max(scoreAbove, scoreBelow);
       if (riverScore < 0.01) continue;
       const d = document.createElement('div');
       d.style.cssText =
