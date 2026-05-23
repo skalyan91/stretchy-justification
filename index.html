@@ -852,18 +852,12 @@ function insertTamilSoftHyphens(text) {
   return text.split(' ').map(word => {
     const clusters = Array.from(seg.segment(word), s => s.segment);
     if (clusters.length < 4) return word;
-    // Find the last Tamil-block cluster so the "before-last" rule is anchored
-    // to Tamil syllables, not trailing punctuation.
-    let lastTa = clusters.length - 1;
-    while (lastTa > 0) {
-      const cp = clusters[lastTa].codePointAt(0);
-      if (cp >= 0x0B80 && cp <= 0x0BFF) break;
-      lastTa--;
-    }
     const out = [clusters[0]];
     for (let i = 1; i < clusters.length; i++) {
       const isPulli = clusters[i].at(-1) === '்';
-      if (i >= 2 && i <= lastTa - 1 && !isPulli) out.push('­');
+      // No break after the first glyph (i < 2), before the last glyph (i > n−2),
+      // or before a glyph with puḷḷi.
+      if (i >= 2 && i <= clusters.length - 2 && !isPulli) out.push('­');
       out.push(clusters[i]);
     }
     return out.join('');
