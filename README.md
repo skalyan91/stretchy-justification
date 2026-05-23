@@ -2,7 +2,7 @@
 
 A side-by-side typography demo that justifies text by adjusting the `wdth` axis of a variable font per line — no word-spacing tricks.
 
-**[Live demo](https://stretchy-justification.vercel.app)**
+**[Live demo](https://pretext-newbreak.vercel.app)**
 
 ## What it does
 
