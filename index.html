@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stretchy Justification</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:     #f7f5f0;
+      --panel:  #ffffff;
+      --border: #dedad3;
+      --fg:     #1a1a1a;
+      --muted:  #9a9490;
+      --err:    #b04040;
+      --ui:     system-ui, -apple-system, sans-serif;
+    }
+
+    html, body { height: 100%; overflow: hidden; }
+
+    body {
+      display: flex;
+      font-family: var(--ui);
+      color: var(--fg);
+      background: var(--bg);
+    }
+
+    /* ── Sidebar ─────────────────────────────────────────── */
+    aside {
+      width: 260px;
+      flex-shrink: 0;
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-header {
+      padding: 18px 18px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-header h1 { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+    .sidebar-header p  { margin-top: 5px; font-size: 11px; color: var(--muted); line-height: 1.55; }
+    .sidebar-header code {
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 0 3px;
+      border-radius: 2px;
+    }
+
+    .s-section {
+      padding: 13px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+    .s-label {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 4px;
+      font-family: var(--ui);
+      font-size: 12px;
+      cursor: pointer;
+      border: none;
+      padding: 5px 11px;
+      white-space: nowrap;
+    }
+    .btn-dark    { background: var(--fg); color: #fff; }
+    .btn-dark:hover { background: #333; }
+    .btn-outline { background: none; color: var(--fg); border: 1px solid var(--border); }
+    .btn-outline:hover { background: var(--bg); }
+    .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    #font-info {
+      font-size: 11px;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+    #font-info strong { color: var(--fg); }
+    #font-info code {
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 10px;
+      background: var(--bg);
+      padding: 1px 4px;
+      border-radius: 2px;
+    }
+
+    .preset-row { display: flex; gap: 5px; }
+    .preset-btn {
+      padding: 4px 11px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      background: none;
+      font-family: var(--ui);
+      font-size: 11.5px;
+      cursor: pointer;
+    }
+    .preset-btn:hover { background: var(--bg); }
+
+    textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 10px;
+      font-family: var(--ui);
+      font-size: 12px;
+      line-height: 1.5;
+      background: var(--bg);
+      color: var(--fg);
+      resize: vertical;
+      min-height: 80px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .check-row input[type="checkbox"] {
+      accent-color: var(--fg);
+      width: 13px;
+      height: 13px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    textarea:focus { outline: 1.5px solid var(--fg); border-color: transparent; }
+
+    .slider-stack { display: flex; flex-direction: column; gap: 13px; }
+    .slider-item  { display: flex; flex-direction: column; gap: 5px; }
+    .slider-label-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .slider-label { font-size: 12px; }
+    .slider-unit  { font-size: 10px; color: var(--muted); }
+    .slider-controls { display: flex; align-items: center; gap: 8px; }
+    input[type="range"]  { flex: 1; accent-color: var(--fg); }
+    input[type="number"] {
+      width: 52px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 3px 5px;
+      font-family: var(--ui);
+      font-size: 12px;
+      text-align: right;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    input[type="number"]:focus { outline: 1.5px solid var(--fg); border-color: transparent; }
+
+    /* ── Double-range slider (wdth subset) ───────────────── */
+    .range-dual-wrap {
+      position: relative;
+      height: 22px;
+      display: flex;
+      align-items: center;
+    }
+    .range-track-bg, .range-fill {
+      position: absolute;
+      height: 3px;
+      top: 50%;
+      transform: translateY(-50%);
+      border-radius: 2px;
+    }
+    .range-track-bg { left: 7px; right: 7px; background: var(--border); }
+    .range-fill     { background: var(--fg); pointer-events: none; }
+    .range-dual-wrap input[type="range"] {
+      position: absolute;
+      left: 0; right: 0; width: 100%;
+      margin: 0; padding: 0;
+      pointer-events: none;
+      -webkit-appearance: none; appearance: none;
+      background: transparent;
+      height: 22px;
+      flex: unset; accent-color: unset;
+    }
+    .range-dual-wrap input[type="range"]::-webkit-slider-runnable-track {
+      background: transparent; height: 3px;
+    }
+    .range-dual-wrap input[type="range"]::-webkit-slider-thumb {
+      pointer-events: auto;
+      -webkit-appearance: none; appearance: none;
+      width: 13px; height: 13px;
+      border-radius: 50%;
+      background: var(--fg);
+      cursor: pointer;
+      margin-top: -5px;
+    }
+    .range-dual-wrap input[type="range"]::-moz-range-track { background: transparent; }
+    .range-dual-wrap input[type="range"]::-moz-range-thumb {
+      pointer-events: auto;
+      width: 13px; height: 13px;
+      border-radius: 50%;
+      background: var(--fg);
+      cursor: pointer; border: none;
+    }
+    .wdth-num-row { display: flex; align-items: center; gap: 5px; }
+    .wdth-num-label { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+    .wdth-num-row input[type="number"] { width: 52px; flex-shrink: 0; }
+    .wdth-spacer { flex: 1; }
+
+    /* ── Comparison area ─────────────────────────────────── */
+    .comparison {
+      flex: 1;
+      display: flex;
+      align-items: flex-start;
+      overflow-x: hidden;
+      overflow-y: auto;
+      min-width: 0;
+    }
+
+    .panel {
+      flex: 1;
+      min-width: 0;
+      min-height: 100%;
+      overflow-x: clip;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 36px 20px 80px;
+    }
+    .panel + .panel { border-left: 1px solid var(--border); }
+
+    .panel-label {
+      align-self: flex-start;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+
+    /* ── Text column ─────────────────────────────────────── */
+    .col { position: relative; padding-bottom: 2em; }
+
+    .lw { display: flex; align-items: baseline; }
+
+    .line {
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .annot {
+      flex-shrink: 0;
+      width: 46px;
+      margin-left: 10px;
+      font-size: 8.5px;
+      font-family: 'Menlo', 'Consolas', monospace;
+      color: var(--muted);
+      opacity: 0.55;
+      line-height: 1;
+      padding-top: 3px;
+    }
+    .annot.cl { color: #b07040; opacity: 0.85; }
+    .lw.rtl { flex-direction: row-reverse; }
+    .lw.rtl .annot { margin-left: 0; margin-right: 10px; }
+
+    .placeholder {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.7;
+      max-width: 260px;
+      text-align: center;
+    }
+    .placeholder code {
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 11.5px;
+      background: var(--border);
+      padding: 1px 4px;
+      border-radius: 2px;
+      color: var(--fg);
+    }
+
+    /* ── Hidden measurement span ─────────────────────────── */
+    #ms {
+      position: fixed;
+      top: -9999px;
+      left: 0;
+      white-space: nowrap;
+      visibility: hidden;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+<span id="ms"></span>
+
+<aside>
+  <div class="sidebar-header">
+    <h1>Stretchy Justification</h1>
+    <p>Justifies text by adjusting the <code>wdth</code> axis of a variable font per line — no word-spacing tricks.</p>
+  </div>
+
+  <div class="s-section">
+    <div class="s-label">Font</div>
+    <div class="btn-row">
+      <button class="btn btn-outline" id="upload-btn">Upload override…</button>
+    </div>
+    <input type="file" id="font-file" accept=".ttf,.otf,.woff,.woff2" style="display:none">
+    <div id="font-info">Loading fonts…</div>
+  </div>
+
+  <div class="s-section">
+    <div class="s-label">Text</div>
+    <div class="preset-row">
+      <button class="preset-btn" id="btn-english">English</button>
+      <button class="preset-btn" id="btn-tamil">Tamil</button>
+      <button class="preset-btn" id="btn-arabic">Arabic</button>
+    </div>
+    <textarea id="text-input" placeholder="Type or paste text, or use a preset…" rows="5"></textarea>
+  </div>
+
+  <div class="s-section">
+    <div class="s-label">Settings</div>
+    <div class="slider-stack">
+      <div class="slider-item">
+        <div class="slider-label-row">
+          <span class="slider-label">Column width</span>
+          <span class="slider-unit">px</span>
+        </div>
+        <div class="slider-controls">
+          <input type="range"  id="cw-range" min="200" max="900" value="400">
+          <input type="number" id="cw-num"   min="200" max="900" value="400">
+        </div>
+      </div>
+      <div class="slider-item">
+        <div class="slider-label-row">
+          <span class="slider-label">Font size</span>
+          <span class="slider-unit">px</span>
+        </div>
+        <div class="slider-controls">
+          <input type="range"  id="fs-range" min="8" max="96" value="24">
+          <input type="number" id="fs-num"   min="8" max="96" value="24">
+        </div>
+      </div>
+    </div>
+    <label class="check-row">
+      <input type="checkbox" id="highlight-cb" checked>
+      Space highlights
+    </label>
+    <label class="check-row">
+      <input type="checkbox" id="rivers-cb">
+      Rivers
+    </label>
+  </div>
+
+  <div class="s-section">
+    <div class="s-label">Width axis subset</div>
+    <div class="range-dual-wrap">
+      <div class="range-track-bg"></div>
+      <div class="range-fill" id="wdth-fill"></div>
+      <input type="range" id="wdth-lo-range">
+      <input type="range" id="wdth-hi-range">
+    </div>
+    <div class="wdth-num-row">
+      <span class="wdth-num-label">Min</span>
+      <input type="number" id="wdth-lo-num">
+      <span class="wdth-spacer"></span>
+      <span class="wdth-num-label">Max</span>
+      <input type="number" id="wdth-hi-num">
+    </div>
+  </div>
+</aside>
+
+<div class="comparison">
+  <section class="panel">
+    <div class="panel-label">Regular</div>
+    <div class="col" id="col-regular">
+      <p class="placeholder">Loading…</p>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel-label">Stretchy</div>
+    <div class="col" id="col-stretchy"></div>
+  </section>
+</div>
+
+<script type="module">
+import { prepareWithSegments, layoutWithLines }
+  from 'https://cdn.jsdelivr.net/npm/@chenglou/pretext@0.0.7/+esm';
+
+import * as _ot from 'https://cdn.jsdelivr.net/npm/opentype.js/+esm';
+const parseFont = typeof _ot.parse === 'function' ? _ot.parse
+  : typeof _ot.default?.parse === 'function' ? _ot.default.parse
+  : null;
+
+import _Hypher from 'https://cdn.jsdelivr.net/npm/hypher@0.2.5/+esm';
+const HypherCtor = typeof _Hypher === 'function' ? _Hypher
+  : typeof _Hypher.default === 'function' ? _Hypher.default
+  : null;
+
+import _enPatterns from 'https://cdn.jsdelivr.net/npm/hyphenation.en-us@0.2.1/+esm';
+// hyphenation.en-us may export as default or named; normalise to an object
+const enPatterns = (_enPatterns && _enPatterns.patterns) ? _enPatterns
+  : (_enPatterns?.default?.patterns) ? _enPatterns.default
+  : null;
+
+const hypher = HypherCtor && enPatterns ? new HypherCtor(enPatterns) : null;
+
+// ── Preset texts ──────────────────────────────────────
+const ENGLISH = 'From a little after two o’clock until almost sundown of the long still hot weary dead September afternoon they sat in what Miss Coldfield still called the office because her father had called it that—a dim hot airless room with the blinds all closed and fastened for forty-three summers because when she was a girl someone had believed that light and moving air carried heat and that dark was always cooler, and which (as the sun shone fuller and fuller on that side of the house) became latticed with yellow slashes full of dust motes which Quentin thought of as being flecks of the dead old dried paint. There was a wistaria vine blooming for the second time that summer on a wooden trellis before one window, into which sparrows came now and then in random gusts, making a dry vivid dusty sound before going away: and opposite Quentin, Miss Coldfield in the eternal black which she had worn for forty-three years now,';
+
+const ARABIC = 'في هاته الساعة من النهار حين تبدأ الموجودات ترجع لصوابها، ويقطع الصمت المطلق الذي يحكم على قرى الفلاحين طول الليل أذانُ المؤذن وصوتُ الديكة ويقظة الحيوانات جميعًا من راحتها، وحين تتلاشى الظلمة ويظهر الصباح رويدًا رويدًا من وراء الحجب — في هاته الساعة كانت زينب تتمطَّى في مرقدها، وترسل في الجو الساكن الهادئ تنهدات القائم من نومه. وعن جانبيها أختها وأخوها ما يزالان نائمين. فانسحبت هي من بينهما. وبعيون ما يزال فيها أثر النوم نظرت لكل ما حولها. ولم يدعها نسيم الصباح تترك مكانها، بل استندت إلى الوسادة وجاهدت أن تنظر لعلها ترى ما في صحن الدار فلم تجد شيئًا. وأدارت رأسها فإذا باب الغرفة موصد، ولا صوت حولها إلا ما يتنادى به رسل الإصلاح من أطراف القرية. بقيت في مكانها هنيهة ساكنة لا تبدي حراكًا. ثم فردت ذراعيها من جديد، وأرسلت في الهواء تنهداتها، وتركت نفسها تذهب في أحلام يحييها النسيم، حتى أحست بالباب تفتحه أمها راجعة من أولى أدوار الملية. هنالك التفتت إلى أختها تهزّها لتستيقظ. لكن الصغيرة كانت في نوم عميق فلم تنتبه، وتقلبت كأن بها ضيقًا ممن يقلقها في مضجعها. وأخيرًا نادتها أمها فلم تزد على الجواب كلمة. وبعد أن استيقظت أختها التفتت إلى أخيها وأيقظته. وحدقت نحو الشرق فإذا الأفق متورد، والشمس في لونها القاني والسماء قد خلعت قميص الليل. هنالك قامت فأوقدت نارًا ولدنت فوقها رغيفًا لكل منهم، ولم تنس أمها وأباها. دخل أبوها راجعًا من الجامع وقد قرأ الورد وصلى الفجر، وما كاد يتخطى عتبة الدار حتى نادى ابنه وسأله إن كان قد استيقظ بعدُ وإن كان قد أعدَّ عمله.';
+const TAMIL = 'ஆடித் திங்கள் பதினெட்டாம் நாள் முன் மாலை நேரத்தில் அலை கடல் போல் விரிந்து பரந்திருந்த வீர நாராயண ஏரிக்கரை மீது ஒரு வாலிப வீரன் குதிரை ஏறிப் பிரயாணம் செய்து கொண்டிருந்தான். அவன் தமிழகத்து வீர சரித்திரத்தில் புகழ்பெற்ற வாணர் குலத்தைச் சேர்ந்தவன். வல்லவரையன் வந்தியத்தேவன். நெடுந்தூரம் பிரயாணம் செய்து அலுத்துக்களைத்திருந்த அவனுடைய குதிரை மெள்ள மெள்ள நடந்து சென்று கொண்டிருந்தது. அதைப் பற்றி அந்த இளம் வீரன் கவலைப்படவில்லை. அகண்டமான வீர நாராயண ஏரியின் தோற்றம் அவன் உள்ளத்தை அவ்வளவாக வசீகரித்திருந்தது. அத்தகைய சோழ குல மன்னர்களுடன் நட்புரிமை கொள்ளும் பேறு தனக்குக் கிடைத்திருப்பது பற்றி நினைக்க வந்தியத்தேவனுடைய தோள்கள் பூரித்தன. ஆடிப் பதினெட்டாம் பெருக்கன்று சோழநாட்டு நதிகளிலெல்லாம் வெள்ளம் இருகரையும்தொட்டுக் கொண்டு ஓடுவது வழக்கம். அந்த நதிகளிலிருந்து தண்ணீர் பெறும் ஏரிகளும் பூரணமாக நிரம்பிக் கரையின் உச்சியைத் தொட்டுக் கொண்டு அலைமோதிக் கொண்டிருப்பது வழக்கம்.';
+
+// ── Font state ────────────────────────────────────────
+let enFont = { family: 'AmstelvarFont', wdthMin: 50,  wdthMax: 125, wdthDefault: 100, wdthLo: 50,  wdthHi: 125 };
+let taFont = { family: 'KorkaiFont',   wdthMin: 100, wdthMax: 200, wdthDefault: 100, wdthLo: 100, wdthHi: 200 };
+let arFont = { family: 'EstedadFont',  wdthMin: 100, wdthMax: 200, wdthDefault: 100, wdthLo: 100, wdthHi: 200 };
+let fontsReady = false;
+let highlightSpaces = true;
+let showRivers = false;
+let colWidthInitialized = false; // snaps to min once after each text/font change
+
+let renderTimer = null, renderId = 0;
+
+function detectLang(text) {
+  if (/[஀-௿]/.test(text)) return 'ta';
+  if (/[؀-ۿ]/.test(text)) return 'ar';
+  return 'en';
+}
+function fontFor(lang) {
+  if (lang === 'ta') return taFont;
+  if (lang === 'ar') return arFont;
+  return enFont;
+}
+
+// ── DOM refs ──────────────────────────────────────────
+const get = id => document.getElementById(id);
+const fontFileEl  = get('font-file');
+const uploadBtn   = get('upload-btn');
+const fontInfoEl  = get('font-info');
+const textarea    = get('text-input');
+const cwRange     = get('cw-range');
+const cwNum       = get('cw-num');
+const fsRange     = get('fs-range');
+const fsNum       = get('fs-num');
+const colRegular    = get('col-regular');
+const colStretchy   = get('col-stretchy');
+const ms            = get('ms');
+const comparisonEl  = document.querySelector('.comparison');
+const highlightCb   = get('highlight-cb');
+const riversCb      = get('rivers-cb');
+const wdthLoRange   = get('wdth-lo-range');
+const wdthHiRange   = get('wdth-hi-range');
+const wdthLoNum     = get('wdth-lo-num');
+const wdthHiNum     = get('wdth-hi-num');
+const wdthFillEl    = get('wdth-fill');
+
+// ── Bundled font auto-load ────────────────────────────
+async function loadBundledFonts() {
+  try {
+    const [jBuf, kBuf, aBuf] = await Promise.all([
+      fetch('./amstelvar.ttf').then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }),
+      fetch('./korkai.ttf').then(r    => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }),
+      fetch('./arabic.ttf').then(r    => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }),
+    ]);
+    await Promise.all([
+      registerFont('AmstelvarFont', jBuf, enFont),
+      registerFont('KorkaiFont',   kBuf, taFont),
+      registerFont('EstedadFont',  aBuf, arFont),
+    ]);
+    fontsReady = true;
+    updateFontInfo();
+    scheduleRender();
+  } catch (e) {
+    fontInfoEl.innerHTML = '<span style="color:var(--err)">Font load failed. Upload a font to continue.</span>';
+  }
+}
+
+async function registerFont(family, buf, fontObj) {
+  const toRemove = [];
+  document.fonts.forEach(f => { if (f.family === family) toRemove.push(f); });
+  toRemove.forEach(f => document.fonts.delete(f));
+
+  const face = new FontFace(family, buf);
+  await face.load();
+  document.fonts.add(face);
+
+  if (parseFont) {
+    try {
+      const parsed = parseFont(buf);
+      const ax = parsed.tables.fvar?.axes.find(a => a.tag === 'wdth');
+      if (ax) Object.assign(fontObj, {
+        wdthMin: ax.minValue, wdthMax: ax.maxValue, wdthDefault: ax.defaultValue,
+        wdthLo:  ax.minValue, wdthHi:  ax.maxValue,
+      });
+    } catch {}
+  }
+}
+
+function updateFontInfo() {
+  fontInfoEl.innerHTML =
+    `<strong>English</strong> &nbsp;Amstelvar &nbsp;<code>wdth ${enFont.wdthMin}–${enFont.wdthMax}</code><br>` +
+    `<strong>Tamil</strong> &nbsp;&nbsp;&nbsp;Korkai &nbsp;<code>wdth ${taFont.wdthMin}–${taFont.wdthMax}</code><br>` +
+    `<strong>Arabic</strong> &nbsp;&nbsp;Estedad &nbsp;<code>wdth ${arFont.wdthMin}–${arFont.wdthMax}</code>`;
+}
+
+// ── Font upload override ──────────────────────────────
+uploadBtn.addEventListener('click', () => fontFileEl.click());
+fontFileEl.addEventListener('change', async () => {
+  if (fontFileEl.files[0]) await loadFontOverride(fontFileEl.files[0]);
+});
+
+async function loadFontOverride(source) {
+  if (!parseFont) return;
+  const buf = source instanceof ArrayBuffer ? source : await source.arrayBuffer();
+  let parsed;
+  try { parsed = parseFont(buf); } catch { return; }
+
+  const wdthAxis = parsed.tables.fvar?.axes.find(a => a.tag === 'wdth');
+  if (!wdthAxis) {
+    fontInfoEl.innerHTML = '<span style="color:var(--err)">No <code>wdth</code> axis in this font.</span>';
+    return;
+  }
+
+  const lang = detectLang(textarea.value.trim());
+  const fontObj = fontFor(lang);
+  await registerFont(fontObj.family, buf, fontObj);
+  fontsReady = true;
+  updateFontInfo();
+  resetColWidth();
+  scheduleRender();
+}
+
+// ── Slider two-way binding ────────────────────────────
+function bindSlider(range, num) {
+  range.addEventListener('input',  () => { num.value = range.value; scheduleRender(); });
+  num.addEventListener('change',   () => {
+    const v = Math.max(+num.min, Math.min(+num.max, +num.value || 0));
+    num.value = v; range.value = v;
+    scheduleRender();
+  });
+}
+bindSlider(cwRange, cwNum);
+bindSlider(fsRange, fsNum);
+// Font size changes alter line count, so re-compute the initial column width.
+fsRange.addEventListener('input',  resetColWidth);
+fsNum.addEventListener('change',   resetColWidth);
+
+highlightCb.addEventListener('change', () => {
+  highlightSpaces = highlightCb.checked;
+  if (highlightSpaces && showRivers) { showRivers = false; riversCb.checked = false; }
+  scheduleRender();
+});
+riversCb.addEventListener('change', () => {
+  showRivers = riversCb.checked;
+  if (showRivers && highlightSpaces) { highlightSpaces = false; highlightCb.checked = false; }
+  scheduleRender();
+});
+
+// ── wdth subset UI ────────────────────────────────────
+// Fill tracks from 7px to (100%−7px), matching the 13px thumb radius offset.
+// Formula: thumb_x = 7px + pct/100 * (100% − 14px)
+//        = calc(${pct}% − ${pct*0.14}px + 7px)
+function updateWdthFill(font) {
+  const range = font.wdthMax - font.wdthMin;
+  if (range <= 0) {
+    wdthFillEl.style.left  = '7px';
+    wdthFillEl.style.width = 'calc(100% - 14px)';
+    return;
+  }
+  const loPct  = (font.wdthLo - font.wdthMin) / range * 100;
+  const hiPct  = (font.wdthHi - font.wdthMin) / range * 100;
+  const spanPct = hiPct - loPct;
+  wdthFillEl.style.left  = `calc(${loPct.toFixed(3)}% - ${(loPct   * 0.14).toFixed(3)}px + 7px)`;
+  wdthFillEl.style.width = `calc(${spanPct.toFixed(3)}% - ${(spanPct * 0.14).toFixed(3)}px)`;
+}
+
+function updateWdthUI(font) {
+  wdthLoRange.min = font.wdthMin; wdthLoRange.max = font.wdthMax; wdthLoRange.value = font.wdthLo;
+  wdthHiRange.min = font.wdthMin; wdthHiRange.max = font.wdthMax; wdthHiRange.value = font.wdthHi;
+  wdthLoNum.min   = font.wdthMin; wdthLoNum.max   = font.wdthMax; wdthLoNum.value   = font.wdthLo;
+  wdthHiNum.min   = font.wdthMin; wdthHiNum.max   = font.wdthMax; wdthHiNum.value   = font.wdthHi;
+  updateWdthFill(font);
+}
+
+wdthLoRange.addEventListener('input', () => {
+  const font = fontFor(detectLang(textarea.value.trim()));
+  font.wdthLo = Math.min(+wdthLoRange.value, font.wdthHi - 1);
+  wdthLoRange.value = font.wdthLo; wdthLoNum.value = font.wdthLo;
+  updateWdthFill(font); scheduleRender();
+});
+wdthHiRange.addEventListener('input', () => {
+  const font = fontFor(detectLang(textarea.value.trim()));
+  font.wdthHi = Math.max(+wdthHiRange.value, font.wdthLo + 1);
+  wdthHiRange.value = font.wdthHi; wdthHiNum.value = font.wdthHi;
+  updateWdthFill(font); scheduleRender();
+});
+wdthLoNum.addEventListener('change', () => {
+  const font = fontFor(detectLang(textarea.value.trim()));
+  font.wdthLo = Math.max(font.wdthMin, Math.min(+wdthLoNum.value, font.wdthHi - 1));
+  wdthLoNum.value = font.wdthLo; wdthLoRange.value = font.wdthLo;
+  updateWdthFill(font); scheduleRender();
+});
+wdthHiNum.addEventListener('change', () => {
+  const font = fontFor(detectLang(textarea.value.trim()));
+  font.wdthHi = Math.min(font.wdthMax, Math.max(+wdthHiNum.value, font.wdthLo + 1));
+  wdthHiNum.value = font.wdthHi; wdthHiRange.value = font.wdthHi;
+  updateWdthFill(font); scheduleRender();
+});
+
+// ── Responsive column-width ceiling ──────────────────
+function colWidthMax() {
+  // Each panel = (vw − sidebar) / 2; subtract panel padding (40) + annot gutter (46) + safety (20)
+  return Math.max(100, Math.floor((window.innerWidth - 260) / 2) - 106);
+}
+function updateColWidthMax() {
+  const max = colWidthMax();
+  cwRange.max = max;
+  cwNum.max   = max;
+  if (+cwRange.value > max) { cwRange.value = max; cwNum.value = max; }
+}
+
+// Sets cwRange.min so that the rendered column height ≤ the comparison viewport.
+// height ∝ 1/colW, so minColW = colW × (colH / availH).
+function updateColWidthMin() {
+  if (!comparisonEl || comparisonEl.clientHeight <= 0) return;
+  // Available height for text = viewport height minus the panel's fixed overhead
+  // (padding-top 36 + label+margin ~36 + padding-bottom 80 = 152px).
+  const targetH = comparisonEl.clientHeight - 152;
+  if (targetH <= 0) return;
+  // offsetHeight gives the true rendered content height regardless of scroll position.
+  const colH = Math.max(colRegular.offsetHeight, colStretchy.offsetHeight);
+  if (colH <= 0) return;
+  const colW  = +cwRange.value;
+  const maxW  = colWidthMax();
+  // height ∝ 1/colW → minColW = colW × colH / targetH.
+  // Cap at maxW so min never exceeds max when content overflows even at widest valid column.
+  const minW  = Math.max(100, Math.min(Math.ceil(colW * colH / targetH), maxW));
+  cwRange.min = minW;
+  cwNum.min   = minW;
+  if (!colWidthInitialized) {
+    // First render after a text/font change: snap to the computed minimum so the
+    // initial view shows the tightest columns that still fit in one screen.
+    colWidthInitialized = true;
+    if (+cwRange.value !== minW) { cwRange.value = minW; cwNum.value = minW; scheduleRender(); }
+  } else if (+cwRange.value < minW) {
+    cwRange.value = minW; cwNum.value = minW; scheduleRender();
+  }
+}
+
+updateColWidthMax();
+// Initialize to widest valid width (not the hardcoded 400 from HTML).
+cwRange.value = cwRange.max; cwNum.value = cwRange.max;
+window.addEventListener('resize', () => { updateColWidthMax(); resetColWidth(); scheduleRender(); });
+
+// ── Presets ───────────────────────────────────────────
+function resetColWidth() {
+  colWidthInitialized = false;
+  cwRange.value = cwRange.max; cwNum.value = cwRange.max;
+}
+get('btn-english').addEventListener('click', () => { textarea.value = ENGLISH; resetColWidth(); scheduleRender(); });
+get('btn-tamil').addEventListener('click',   () => { textarea.value = TAMIL;   resetColWidth(); scheduleRender(); });
+get('btn-arabic').addEventListener('click',  () => { textarea.value = ARABIC;  resetColWidth(); scheduleRender(); });
+textarea.addEventListener('input', scheduleRender);
+
+// ── Measurement ───────────────────────────────────────
+function measure(text, wdth, sz, fontFamily) {
+  ms.style.fontFamily            = `'${fontFamily}', system-ui, serif`;
+  ms.style.fontSize              = `${sz}px`;
+  ms.style.fontVariationSettings = `'wdth' ${wdth}`;
+  ms.textContent = text;
+  return ms.getBoundingClientRect().width;
+}
+
+// Try [wdthDefault, wdthHi] first; only fall back to [wdthLo, wdthDefault] when the line
+// still overflows at wdthDefault.
+function stretchyWdth(lineText, colW, sz, font) {
+  const r = findWdth(lineText, colW, sz, font.family, font.wdthDefault, font.wdthHi);
+  if (r.cl === 'min') return findWdth(lineText, colW, sz, font.family, font.wdthLo, font.wdthDefault);
+  return r;
+}
+
+function findWdth(text, target, sz, fontFamily, wdthMin, wdthMax) {
+  if (measure(text, wdthMax, sz, fontFamily) <= target) return { v: wdthMax, cl: 'max' };
+  if (measure(text, wdthMin, sz, fontFamily) >= target) return { v: wdthMin, cl: 'min' };
+  let lo = wdthMin, hi = wdthMax;
+  for (let i = 0; i < 20; i++) {
+    const mid = (lo + hi) / 2;
+    if (measure(text, mid, sz, fontFamily) < target) lo = mid; else hi = mid;
+  }
+  return { v: (lo + hi) / 2, cl: null };
+}
+
+function naturalSpaceWidth(font, sz) {
+  return measure('a b', font.wdthDefault, sz, font.family)
+       - measure('ab',  font.wdthDefault, sz, font.family);
+}
+
+// ── Space highlights with river detection ─────────────
+// Must be called after elements are in the DOM (Range API requires rendered layout).
+
+function collectLineSpaces(el) {
+  el.style.position = 'relative';
+  const node = el.firstChild;
+  if (!node || node.nodeType !== Node.TEXT_NODE) return [];
+  const text = node.textContent;
+  const elRect = el.getBoundingClientRect();
+  const spaces = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== ' ') continue;
+    const range = document.createRange();
+    range.setStart(node, i);
+    range.setEnd(node, i + 1);
+    const rects = range.getClientRects();
+    if (!rects.length) continue;
+    const r = rects[0];
+    spaces.push({
+      el, left: r.left, right: r.right, top: r.top, width: r.width,
+      relLeft: r.left - elRect.left, relTop: r.top - elRect.top,
+    });
+  }
+  return spaces;
+}
+
+function renderSpaceHighlights(spacesByLine, lineH, naturalSpW) {
+  if (naturalSpW <= 0) return;
+  for (const line of spacesByLine) {
+    for (const sp of line) {
+      const deviation = sp.width - naturalSpW;
+      let rgba;
+      if (deviation > 0) {
+        // Red for wider-than-normal spaces; maxes out at 4× natural (deviation = 3×)
+        const alpha = Math.min(deviation / (3 * naturalSpW), 1) * 0.7;
+        if (alpha < 0.01) continue;
+        rgba = `rgba(180,60,60,${alpha.toFixed(3)})`;
+      } else {
+        // Blue for narrower-than-normal spaces; max alpha 0.25 when space → 0
+        const alpha = Math.min(-deviation / naturalSpW, 1) * 0.25;
+        if (alpha < 0.01) continue;
+        rgba = `rgba(60,60,180,${alpha.toFixed(3)})`;
+      }
+      const d = document.createElement('div');
+      d.style.cssText =
+        `position:absolute;pointer-events:none;` +
+        `left:${sp.relLeft.toFixed(2)}px;top:${sp.relTop.toFixed(2)}px;` +
+        `width:${sp.width.toFixed(2)}px;height:${lineH.toFixed(2)}px;` +
+        `background:${rgba}`;
+      sp.el.appendChild(d);
+    }
+  }
+}
+
+function renderRiverHighlights(spacesByLine, lineH) {
+  for (let li = 0; li < spacesByLine.length; li++) {
+    const prevLine = li > 0 ? spacesByLine[li - 1] : [];
+    const nextLine = li < spacesByLine.length - 1 ? spacesByLine[li + 1] : [];
+    for (const sp of spacesByLine[li]) {
+      let riverScore = 0;
+      for (const adj of prevLine) {
+        const ov = Math.min(sp.right, adj.right) - Math.max(sp.left, adj.left);
+        if (ov > 0) riverScore = Math.max(riverScore, ov / Math.max(sp.width, adj.width));
+      }
+      for (const adj of nextLine) {
+        const ov = Math.min(sp.right, adj.right) - Math.max(sp.left, adj.left);
+        if (ov > 0) riverScore = Math.max(riverScore, ov / Math.max(sp.width, adj.width));
+      }
+      if (riverScore < 0.01) continue;
+      const d = document.createElement('div');
+      d.style.cssText =
+        `position:absolute;pointer-events:none;` +
+        `left:${sp.relLeft.toFixed(2)}px;top:${sp.relTop.toFixed(2)}px;` +
+        `width:${sp.width.toFixed(2)}px;height:${lineH.toFixed(2)}px;` +
+        `background:rgba(60,60,180,${riverScore.toFixed(3)})`;
+      sp.el.appendChild(d);
+    }
+  }
+}
+
+// Per-element-per-line: for Tamil/Arabic regular and all stretchy lines.
+function addSpaceHighlightsForLines(lineEls, naturalSpW, sz) {
+  const spacesByLine = lineEls.map(el => collectLineSpaces(el));
+  if (showRivers) renderRiverHighlights(spacesByLine, sz * 1.45);
+  else renderSpaceHighlights(spacesByLine, sz * 1.45, naturalSpW);
+}
+
+// Single div with many visual lines: for the English regular panel.
+function addSpaceHighlightsSingleDiv(div, naturalSpW, sz) {
+  div.style.position = 'relative';
+  const node = div.firstChild;
+  if (!node || node.nodeType !== Node.TEXT_NODE) return;
+  const text = node.textContent;
+  const divRect = div.getBoundingClientRect();
+  const lineH = sz * 1.45;
+  const allSpaces = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== ' ') continue;
+    const range = document.createRange();
+    range.setStart(node, i);
+    range.setEnd(node, i + 1);
+    const rects = range.getClientRects();
+    if (!rects.length) continue;
+    const r = rects[0];
+    allSpaces.push({
+      el: div, left: r.left, right: r.right, top: r.top, width: r.width,
+      relLeft: r.left - divRect.left, relTop: r.top - divRect.top,
+    });
+  }
+  const lines = [];
+  for (const sp of allSpaces) {
+    const line = lines.find(l => Math.abs(l[0].top - sp.top) < lineH * 0.5);
+    if (line) line.push(sp);
+    else lines.push([sp]);
+  }
+  if (showRivers) renderRiverHighlights(lines, lineH);
+  else renderSpaceHighlights(lines, lineH, naturalSpW);
+}
+
+// ── English: Knuth-Liang hyphenation via hypher ───────
+function insertSoftHyphens(text) {
+  if (!hypher) return text;
+  return text.replace(/[a-z]{4,}/gi, w => hypher.hyphenate(w).join('\u00AD'));
+}
+
+// ── English line-breaking: Pretext + soft hyphens ─────
+function layoutEnglish(text, colW, sz, font) {
+  const hyphenated = insertSoftHyphens(text);
+  const prep = prepareWithSegments(hyphenated, `${sz}px ${font.family}`);
+  const { lines } = layoutWithLines(prep, colW, sz * 1.45);
+  return lines.map(l => (l.text || '').trimEnd()).filter(Boolean);
+}
+
+// ── Tamil soft-hyphen insertion ───────────────────────
+// Inserts U+00AD at valid sub-word break points within each space-delimited token.
+// Forbidden positions (no SHY inserted before cluster[i]):
+//   • i < 2              — after-first-cluster rule
+//   • i > length−2       — before-last-cluster rule
+//   • cluster[i] ends with U+0BCD (virama = puḷḷi) — never start a line with a dead consonant
+function insertTamilSoftHyphens(text) {
+  const seg = new Intl.Segmenter('ta', { granularity: 'grapheme' });
+  return text.split(' ').map(word => {
+    const clusters = Array.from(seg.segment(word), s => s.segment);
+    if (clusters.length < 4) return word;
+    // Find the last Tamil-block cluster so the "before-last" rule is anchored
+    // to Tamil syllables, not trailing punctuation.
+    let lastTa = clusters.length - 1;
+    while (lastTa > 0) {
+      const cp = clusters[lastTa].codePointAt(0);
+      if (cp >= 0x0B80 && cp <= 0x0BFF) break;
+      lastTa--;
+    }
+    const out = [clusters[0]];
+    for (let i = 1; i < clusters.length; i++) {
+      const isPulli = clusters[i].at(-1) === '்';
+      if (i >= 2 && i <= lastTa - 1 && !isPulli) out.push('­');
+      out.push(clusters[i]);
+    }
+    return out.join('');
+  }).join(' ');
+}
+
+// ── Arabic line-breaking: Range API, word boundaries only ────
+// Arabic never hyphenates; kashida (wdth stretching) handles justification.
+function layoutArabic(text, colW, sz, font) {
+  const div = document.createElement('div');
+  Object.assign(div.style, {
+    position:              'fixed',
+    top:                   '-9999px',
+    left:                  '0',
+    width:                 `${colW}px`,
+    fontFamily:            `'${font.family}', system-ui, sans-serif`,
+    fontSize:              `${sz}px`,
+    lineHeight:            `${sz * 1.45}px`,
+    fontVariationSettings: `'wdth' ${font.wdthDefault}`,
+    direction:             'rtl',
+    wordBreak:             'normal',
+    hyphens:               'none',
+    whiteSpace:            'normal',
+    visibility:            'hidden',
+  });
+  div.setAttribute('lang', 'ar');
+  div.textContent = text;
+  document.body.appendChild(div);
+  void div.offsetHeight;
+
+  const node = div.firstChild;
+  const segmenter = new Intl.Segmenter('ar', { granularity: 'grapheme' });
+  const LINE_H = sz * 1.45;
+  const lines = [];
+  let lineSegments = [], prevTop = null;
+
+  for (const { index, segment } of segmenter.segment(text)) {
+    const range = document.createRange();
+    range.setStart(node, index);
+    range.setEnd(node, index + segment.length);
+    const rects = range.getClientRects();
+    if (!rects.length) continue;
+    const top = rects[0].top;
+
+    if (prevTop !== null && top > prevTop + LINE_H * 0.5) {
+      const lineText = lineSegments.join('').trim();
+      if (lineText) lines.push(lineText);
+      lineSegments = [];
+    }
+    lineSegments.push(segment);
+    prevTop = top;
+  }
+
+  const lastLine = lineSegments.join('').trim();
+  if (lastLine) lines.push(lastLine);
+  document.body.removeChild(div);
+  return lines;
+}
+
+// ── Tamil line-breaking: Range API + controlled soft hyphens ──
+// U+00AD has Grapheme_Cluster_Break=Control (UAX #29 GB4/GB5),
+// so the segmenter yields it as its own cluster — easy to skip.
+function layoutTamil(text, colW, sz, font) {
+  const processedText = insertTamilSoftHyphens(text);
+  const div = document.createElement('div');
+  Object.assign(div.style, {
+    position:              'fixed',
+    top:                   '-9999px',
+    left:                  '0',
+    width:                 `${colW}px`,
+    fontFamily:            `'${font.family}', system-ui, sans-serif`,
+    fontSize:              `${sz}px`,
+    lineHeight:            `${sz * 1.45}px`,
+    fontVariationSettings: `'wdth' ${font.wdthDefault}`,
+    wordBreak:             'normal',
+    hyphens:               'manual',
+    whiteSpace:            'normal',
+    visibility:            'hidden',
+  });
+  div.setAttribute('lang', 'ta');
+  div.textContent = processedText;
+  document.body.appendChild(div);
+  void div.offsetHeight;
+
+  const node = div.firstChild;
+  const lines = [];
+  const segmenter = new Intl.Segmenter('ta', { granularity: 'grapheme' });
+  const LINE_H = sz * 1.45;
+  let lineSegments = [], prevTop = null;
+
+  for (const { index, segment } of segmenter.segment(processedText)) {
+    if (segment === '­') continue; // layout hint only — never display
+
+    const range = document.createRange();
+    range.setStart(node, index);
+    range.setEnd(node, index + segment.length);
+    const rects = range.getClientRects();
+    if (!rects.length) continue;
+    const top = rects[0].top;
+
+    if (prevTop !== null && top > prevTop + LINE_H * 0.5) {
+      const lineText = lineSegments.join('').trim();
+      if (lineText) lines.push(lineText);
+      lineSegments = [];
+    }
+    lineSegments.push(segment);
+    prevTop = top;
+  }
+
+  const lastLine = lineSegments.join('').trim();
+  if (lastLine) lines.push(lastLine);
+  document.body.removeChild(div);
+
+  return lines;
+}
+
+// ── Render ────────────────────────────────────────────
+function scheduleRender() {
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(render, 60);
+}
+
+async function render() {
+  const myId = ++renderId;
+  const text = textarea.value.trim();
+  const sz   = +fsRange.value;
+  const colW = Math.min(+cwRange.value, colWidthMax());
+
+  if (!fontsReady) { showPH('Loading fonts…'); return; }
+  if (!text)       { showPH('Enter text above, or choose a preset.'); return; }
+
+  const lang = detectLang(text);
+  const font = fontFor(lang);
+
+  try { await document.fonts.load(`${sz}px ${font.family}`); } catch {}
+  if (renderId !== myId) return;
+
+  updateWdthUI(font);
+  colRegular.style.width  = `${colW}px`;
+  colStretchy.style.width = `${colW}px`;
+
+  // Pre-break non-English text once and share between both panels.
+  const precomputedLines =
+    lang === 'ta' ? layoutTamil(text, colW, sz, font) :
+    lang === 'ar' ? layoutArabic(text, colW, sz, font) :
+    null;
+
+  renderRegular(text, colW, sz, lang, font, precomputedLines);
+  renderStretchy(text, colW, sz, lang, font, precomputedLines);
+  updateColWidthMin();
+}
+
+function renderRegular(text, colW, sz, lang, font, precomputedLines) {
+  colRegular.innerHTML = '';
+
+  if (lang === 'ta' || lang === 'ar') {
+    const isAr = lang === 'ar';
+    const lines = precomputedLines ??
+      (isAr ? layoutArabic(text, colW, sz, font) : layoutTamil(text, colW, sz, font));
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i]) continue;
+      const el = document.createElement('div');
+      el.setAttribute('lang', lang);
+      const isLast = i === lines.length - 1;
+      el.style.cssText = [
+        `font-family:'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`,
+        `font-size:${sz}px`,
+        `line-height:1.45`,
+        `font-variation-settings:'wdth' ${font.wdthDefault}`,
+        isAr ? 'direction:rtl' : '',
+        `text-align:justify`,
+        // RTL last line aligns to the right (natural start); LTR last line to the left.
+        `text-align-last:${isLast ? (isAr ? 'right' : 'left') : 'justify'}`,
+      ].filter(Boolean).join(';');
+      el.textContent = lines[i];
+      frag.appendChild(el);
+    }
+    colRegular.appendChild(frag);
+    if (highlightSpaces || showRivers) {
+      const naturalSpW = naturalSpaceWidth(font, sz);
+      addSpaceHighlightsForLines(Array.from(colRegular.querySelectorAll('[lang]')), naturalSpW, sz);
+    }
+    return;
+  }
+
+  const div = document.createElement('div');
+  div.setAttribute('lang', lang);
+  Object.assign(div.style, {
+    fontFamily:            `'${font.family}', system-ui, serif`,
+    fontSize:              `${sz}px`,
+    lineHeight:            '1.45',
+    textAlign:             'justify',
+    fontVariationSettings: `'wdth' ${font.wdthDefault}`,
+    hyphens:               'auto',
+    wordBreak:             'normal',
+    overflowWrap:          'break-word',
+  });
+  div.textContent = text;
+  colRegular.appendChild(div);
+  if (highlightSpaces || showRivers) addSpaceHighlightsSingleDiv(div, naturalSpaceWidth(font, sz), sz);
+}
+
+function renderStretchy(text, colW, sz, lang, font, precomputedLines) {
+  colStretchy.innerHTML = '';
+
+  let lines;
+  try {
+    lines = lang === 'en'
+      ? layoutEnglish(text, colW, sz, font)
+      : (precomputedLines ??
+          (lang === 'ar' ? layoutArabic(text, colW, sz, font) : layoutTamil(text, colW, sz, font)));
+  } catch (err) {
+    colStretchy.innerHTML = `<p style="color:var(--err);font-size:13px">Layout error: ${err.message}</p>`;
+    return;
+  }
+
+  const isAr = lang === 'ar';
+  const frag = document.createDocumentFragment();
+
+  for (let i = 0; i < lines.length; i++) {
+    const lineText = lines[i];
+    if (!lineText) continue;
+
+    const isLast = (i === lines.length - 1);
+    let wdthVal = font.wdthDefault, cl = null;
+    if (!isLast) ({ v: wdthVal, cl } = stretchyWdth(lineText, colW, sz, font));
+
+    const wrapper = document.createElement('div');
+    wrapper.className = isAr ? 'lw rtl' : 'lw';
+
+    const el = document.createElement('div');
+    el.className = 'line';
+    el.style.cssText = [
+      `font-family:'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`,
+      `font-size:${sz}px`,
+      `line-height:1.45`,
+      `font-variation-settings:'wdth' ${wdthVal}`,
+      isAr ? 'direction:rtl' : '',
+    ].filter(Boolean).join(';');
+    el.textContent = lineText;
+
+    if (cl === 'max' && !isLast) {
+      const gap = colW - measure(lineText, font.wdthHi, sz, font.family);
+      const numSpaces = (lineText.match(/ /g) || []).length;
+      if (numSpaces > 0) el.style.wordSpacing = `${(gap / numSpaces).toFixed(2)}px`;
+    }
+
+    const annot = document.createElement('span');
+    annot.className = 'annot' + (cl ? ' cl' : '');
+    annot.textContent = isLast        ? `${font.wdthDefault}↵`
+      : cl === 'max'                  ? `${font.wdthHi}↑`
+      : cl === 'min'                  ? `${font.wdthLo}↓`
+      :                                 wdthVal.toFixed(1);
+
+    wrapper.append(el, annot);
+    frag.appendChild(wrapper);
+  }
+
+  colStretchy.appendChild(frag);
+  if (highlightSpaces || showRivers) {
+    const naturalSpW = naturalSpaceWidth(font, sz);
+    addSpaceHighlightsForLines(Array.from(colStretchy.querySelectorAll('.line')), naturalSpW, sz);
+  }
+}
+
+function showPH(msg) {
+  colRegular.innerHTML  = `<p class="placeholder">${msg}</p>`;
+  colStretchy.innerHTML = '';
+}
+
+// ── Init ──────────────────────────────────────────────
+textarea.value = ENGLISH;
+loadBundledFonts();
+</script>
+</body>
+</html>
