@@ -855,9 +855,9 @@ function insertTamilSoftHyphens(text) {
     const out = [clusters[0]];
     for (let i = 1; i < clusters.length; i++) {
       const isPulli = clusters[i].at(-1) === '்';
-      // No break after the first glyph (i < 2), before the last glyph (i > n−2),
-      // or before a glyph with puḷḷi.
-      if (i >= 2 && i <= clusters.length - 2 && !isPulli) out.push('­');
+      const isPunct = /^[\p{P}\p{S}]/u.test(clusters[i]);
+      // No break after the first glyph, before the last glyph, before puḷḷi, or before punctuation.
+      if (i >= 2 && i <= clusters.length - 2 && !isPulli && !isPunct) out.push('­');
       out.push(clusters[i]);
     }
     return out.join('');
@@ -1029,6 +1029,7 @@ function renderRegular(text, colW, sz, lang, font, precomputedLines) {
         `line-height:1.45`,
         `font-variation-settings:'wdth' ${font.wdthDefault}`,
         isAr ? 'direction:rtl' : '',
+        `white-space:nowrap`,
         `text-align:justify`,
         // RTL last line aligns to the right (natural start); LTR last line to the left.
         `text-align-last:${isLast ? (isAr ? 'right' : 'left') : 'justify'}`,
