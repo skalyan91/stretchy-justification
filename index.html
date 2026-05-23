@@ -855,8 +855,9 @@ function insertTamilSoftHyphens(text) {
     const out = [clusters[0]];
     for (let i = 1; i < clusters.length; i++) {
       const isPulli = clusters[i].at(-1) === '்';
-      const isPunct = /^[\p{P}\p{S}]/u.test(clusters[i]);
-      // No break after the first glyph, before the last glyph, before puḷḷi, or before punctuation.
+      const isPunct = /^\p{P}/u.test(clusters[i]);
+      // No break after the first glyph (i < 2), before the last glyph (i > n−2),
+      // before a glyph with puḷḷi, or before any punctuation mark.
       if (i >= 2 && i <= clusters.length - 2 && !isPulli && !isPunct) out.push('­');
       out.push(clusters[i]);
     }
