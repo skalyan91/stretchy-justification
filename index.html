@@ -299,15 +299,109 @@
       visibility: hidden;
       pointer-events: none;
     }
+
+    /* ── Mobile top bar ──────────────────────────────────── */
+    .mobile-bar {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+      height: 44px;
+      flex-shrink: 0;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }
+    .mobile-title { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+
+    .hamburger-btn {
+      width: 32px; height: 32px;
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: center;
+      gap: 5px;
+      background: none; border: none;
+      cursor: pointer; border-radius: 4px; padding: 0; flex-shrink: 0;
+    }
+    .hamburger-btn span {
+      display: block; width: 18px; height: 2px;
+      background: var(--fg); border-radius: 1px;
+    }
+
+    /* Sidebar close button (mobile only) */
+    .sidebar-header-row {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .sidebar-close {
+      display: none;
+      background: none; border: none;
+      font-size: 15px; line-height: 1;
+      cursor: pointer; color: var(--muted);
+      padding: 3px 6px; border-radius: 3px; flex-shrink: 0;
+    }
+    .sidebar-close:hover { color: var(--fg); }
+
+    /* Sheet backdrop */
+    .backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.35); z-index: 150;
+    }
+    .backdrop.visible { display: block; }
+
+    /* ── Mobile layout ───────────────────────────────────── */
+    @media (max-width: 768px) {
+      body { flex-direction: column; }
+
+      .mobile-bar { display: flex; }
+
+      aside {
+        position: fixed;
+        inset: 0 auto 0 0;
+        z-index: 200;
+        transform: translateX(-260px);
+        transition: transform 0.28s ease;
+        box-shadow: none;
+      }
+      aside.open {
+        transform: translateX(0);
+        box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+      }
+      .sidebar-close { display: block; }
+
+      .comparison {
+        flex-direction: column;
+        align-items: stretch;
+        overflow-x: hidden;
+        overflow-y: hidden;
+      }
+      .panel {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 20px 16px 36px;
+      }
+      .panel + .panel { border-left: none; border-top: 1px solid var(--border); }
+
+      .cw-slider-item { display: none; }
+    }
   </style>
 </head>
 <body>
 
 <span id="ms"></span>
 
+<div class="mobile-bar">
+  <button class="hamburger-btn" id="hamburger-btn" aria-label="Open settings">
+    <span></span><span></span><span></span>
+  </button>
+  <span class="mobile-title">Stretchy Justification</span>
+</div>
+<div class="backdrop" id="backdrop"></div>
+
 <aside>
   <div class="sidebar-header">
-    <h1>Stretchy Justification</h1>
+    <div class="sidebar-header-row">
+      <h1>Stretchy Justification</h1>
+      <button class="sidebar-close" id="sidebar-close" aria-label="Close settings">✕</button>
+    </div>
     <p>Justifies text by adjusting the <code>wdth</code> axis of a variable font per line — no word-spacing tricks.</p>
   </div>
 
@@ -333,7 +427,7 @@
   <div class="s-section">
     <div class="s-label">Settings</div>
     <div class="slider-stack">
-      <div class="slider-item">
+      <div class="slider-item cw-slider-item">
         <div class="slider-label-row">
           <span class="slider-label">Column width</span>
           <span class="slider-unit">px</span>
@@ -466,6 +560,37 @@ const wdthHiRange   = get('wdth-hi-range');
 const wdthLoNum     = get('wdth-lo-num');
 const wdthHiNum     = get('wdth-hi-num');
 const wdthFillEl    = get('wdth-fill');
+
+// ── Mobile helpers ────────────────────────────────────
+function isMobile() { return window.innerWidth <= 768; }
+function mobileColW() { return Math.max(100, window.innerWidth - 96); }
+
+const hamburgerBtn = get('hamburger-btn');
+const backdropEl   = get('backdrop');
+const sidebarEl    = document.querySelector('aside');
+const sidebarClose = get('sidebar-close');
+const panels       = document.querySelectorAll('.panel');
+
+function openSidebar()  { sidebarEl.classList.add('open');    backdropEl.classList.add('visible'); }
+function closeSidebar() { sidebarEl.classList.remove('open'); backdropEl.classList.remove('visible'); }
+
+hamburgerBtn.addEventListener('click', () =>
+  sidebarEl.classList.contains('open') ? closeSidebar() : openSidebar());
+backdropEl.addEventListener('click',  closeSidebar);
+sidebarClose.addEventListener('click', closeSidebar);
+
+// Synchronized scrolling between panels (mobile only)
+let scrollLock = false;
+panels[0].addEventListener('scroll', () => {
+  if (scrollLock || !isMobile()) return;
+  scrollLock = true;
+  try { panels[1].scrollTop = panels[0].scrollTop; } finally { scrollLock = false; }
+});
+panels[1].addEventListener('scroll', () => {
+  if (scrollLock || !isMobile()) return;
+  scrollLock = true;
+  try { panels[0].scrollTop = panels[1].scrollTop; } finally { scrollLock = false; }
+});
 
 // ── Bundled font auto-load ────────────────────────────
 async function loadBundledFonts() {
@@ -635,7 +760,7 @@ function updateColWidthMax() {
 // Sets cwRange.min so that the rendered column height ≤ the comparison viewport.
 // height ∝ 1/colW, so minColW = colW × (colH / availH).
 function updateColWidthMin() {
-  if (!comparisonEl || comparisonEl.clientHeight <= 0) return;
+  if (isMobile() || !comparisonEl || comparisonEl.clientHeight <= 0) return;
   // Available height for text = viewport height minus the panel's fixed overhead
   // (padding-top 36 + label+margin ~36 + padding-bottom 80 = 152px).
   const targetH = comparisonEl.clientHeight - 152;
@@ -667,6 +792,7 @@ window.addEventListener('resize', () => { updateColWidthMax(); resetColWidth(); 
 
 // ── Presets ───────────────────────────────────────────
 function resetColWidth() {
+  if (isMobile()) return;
   colWidthInitialized = false;
   cwRange.value = cwRange.max; cwNum.value = cwRange.max;
 }
@@ -982,7 +1108,7 @@ async function render() {
   const myId = ++renderId;
   const text = textarea.value.trim();
   const sz   = +fsRange.value;
-  const colW = Math.min(+cwRange.value, colWidthMax());
+  const colW = isMobile() ? mobileColW() : Math.min(+cwRange.value, colWidthMax());
 
   if (!fontsReady) { showPH('Loading fonts…'); return; }
   if (!text)       { showPH('Enter text above, or choose a preset.'); return; }
