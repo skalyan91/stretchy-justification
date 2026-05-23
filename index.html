@@ -741,13 +741,11 @@ function renderSpaceHighlights(spacesByLine, lineH, naturalSpW) {
       const deviation = sp.width - naturalSpW;
       let rgba;
       if (deviation > 0) {
-        // Red for wider-than-normal spaces; maxes out at 4× natural (deviation = 3×)
-        const alpha = Math.min(deviation / (3 * naturalSpW), 1) * 0.7;
+        const alpha = deviation / sp.width;   // (space − normal) / space
         if (alpha < 0.01) continue;
         rgba = `rgba(180,60,60,${alpha.toFixed(3)})`;
       } else {
-        // Blue for narrower-than-normal spaces; max alpha 0.25 when space → 0
-        const alpha = Math.min(-deviation / naturalSpW, 1) * 0.25;
+        const alpha = -deviation / naturalSpW; // (normal − space) / normal
         if (alpha < 0.01) continue;
         rgba = `rgba(60,60,180,${alpha.toFixed(3)})`;
       }
