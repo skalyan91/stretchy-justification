@@ -246,13 +246,21 @@
       align-self: stretch;
       margin: 0 -20px;
       padding: 36px 20px 24px;
-      background: linear-gradient(to bottom, var(--bg) 60%, transparent);
+      background: linear-gradient(to bottom,
+        var(--bg)                                         0%,
+        color-mix(in srgb, var(--bg), transparent  7%) 12.5%,
+        color-mix(in srgb, var(--bg), transparent 13%)   25%,
+        color-mix(in srgb, var(--bg), transparent 21%) 37.5%,
+        color-mix(in srgb, var(--bg), transparent 29%)   50%,
+        color-mix(in srgb, var(--bg), transparent 39%) 62.5%,
+        color-mix(in srgb, var(--bg), transparent 50%)   75%,
+        color-mix(in srgb, var(--bg), transparent 65%) 87.5%,
+        transparent                                      100%);
       font-size: 9px;
       font-weight: 700;
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: var(--muted);
-      text-shadow: 0 0 32px var(--bg), 0 0 32px var(--bg), 0 0 32px var(--bg), 0 0 32px var(--bg), 0 0 32px var(--bg), 0 0 32px var(--bg), 0 0 32px var(--bg), 0 0 32px var(--bg), 0 0 32px var(--bg), 0 0 32px var(--bg);
     }
 
     /* ── Text column ─────────────────────────────────────── */
