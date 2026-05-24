@@ -1109,15 +1109,16 @@ function layoutArabic(text, colW, sz, font) {
 }
 
 // Space intervals for river detection.
-// lineStr: the line text as it will be measured (no SHY, trimEnd applied).
-// actualW: DOM-accurate width of lineStr at font.wdthDefault.
-// targetW: colW for non-last lines (apply font stretch); actualW for last line (no stretch).
-// Space left-edges are measured as DOM prefixes at wdthDefault, then scaled by targetW/actualW.
-// This correctly captures HarfBuzz context shaping. Canvas wids[] are used only for the
-// (small) space glyph width, where precision matters less.
-function tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, actualW, targetW) {
-  if (!lineStr || actualW <= 0) return [];
-  const scale = targetW / actualW;
+// lineStr: the line text (no SHY, trimEnd applied).
+// measuredW: measure(lineStr, wdth, sz, font.family) — precomputed by the caller.
+// targetW: colW for non-last lines (stretch to fill); measuredW for last line (no CSS justify).
+// wdth: the font-variation wdth axis value at which prefixes are measured.
+//   Normal column:   wdth = font.wdthDefault  → approximate stretch via scale = colW/measuredW.
+//   Stretchy column: wdth = actual wdthVal     → prefixes already at the rendered width; scale ≈ 1.
+// Canvas wids[] are used only for the space glyph width, where sub-pixel precision is unimportant.
+function tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, measuredW, targetW, wdth) {
+  if (!lineStr || measuredW <= 0) return [];
+  const scale = targetW / measuredW;
   let totalCanvas = 0;
   for (let i = f; i < t; i++) if (segs[i] !== SHY) totalCanvas += wids[i];
   const spaces = [];
@@ -1126,7 +1127,7 @@ function tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, actualW, targ
     if (segs[i] === SHY) continue;
     if (!segs[i].trim()) {
       const prefixW = charPos > 0
-        ? measure(lineStr.substring(0, charPos), font.wdthDefault, sz, font.family)
+        ? measure(lineStr.substring(0, charPos), wdth, sz, font.family)
         : 0;
       const l = prefixW * scale;
       const w = totalCanvas > 0 ? wids[i] / totalCanvas * targetW : 0;
@@ -1193,9 +1194,8 @@ async function layoutTamil(text, colW, sz, font) {
       if (actualW > colW) break; // wider going left — stop inner loop
 
       // River penalty: max Jaccard overlap of spaces in this line vs the previous line.
-      // For non-last lines, targetW = colW applies the font stretch (as in the stretchy column).
-      // For the last line, targetW = actualW (no stretch — it renders at natural width).
-      const curSpaces = tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, actualW, isLast ? actualW : colW);
+      // Measures at wdthDefault and scales to colW (approximate stretch for the normal column).
+      const curSpaces = tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, actualW, isLast ? actualW : colW, font.wdthDefault);
       let riverPenalty = 0;
       const adjSpaces = prevLineSpaces[from];
       if (adjSpaces) {
@@ -1247,6 +1247,121 @@ async function layoutTamil(text, colW, sz, font) {
   return lines.filter(Boolean);
 }
 
+// ── Tamil line-breaking: stretchy column variant ──────────────────────────────
+// Same Knuth-Plass DP as layoutTamil, but the river penalty uses the actual
+// wdth value that stretchyWdth() would select for each candidate line, so that
+// space positions are measured at the true rendered font width rather than at
+// wdthDefault.  Results may differ from layoutTamil and are recomputed whenever
+// colW or font size changes (triggering a full render).
+async function layoutTamilStretchy(text, colW, sz, font) {
+  const processedText = await insertTamilSoftHyphens(text);
+  const prepared = prepareWithSegments(processedText, `${sz}px '${font.family}'`);
+  if (!prepared.segments.length) return [];
+
+  const SHY = '­';
+  const segs  = prepared.segments;
+  const wids  = prepared.widths;
+  const N     = segs.length;
+  const RIVER_W = 200;
+
+  const cands = [{ seg: 0, kind: 'start' }];
+  for (let i = 0; i < N; i++) {
+    if (segs[i] === SHY  && i + 1 < N) { cands.push({ seg: i + 1, kind: 'shy'  }); continue; }
+    if (!segs[i].trim() && i + 1 < N)  { cands.push({ seg: i + 1, kind: 'space' }); }
+  }
+  cands.push({ seg: N, kind: 'end' });
+
+  const C  = cands.length;
+  const dp        = new Float64Array(C).fill(Infinity);
+  const prev      = new Int32Array(C).fill(-1);
+  dp[0] = 0;
+  const prevLineSpaces = new Array(C).fill(null);
+  prevLineSpaces[0] = [];
+  // Cache {v: wdthVal, w: measuredW} per lineStr to avoid repeating the binary search.
+  // measuredW = measure(lineStr, wdthVal, …); for cl:null this equals colW to binary-search
+  // precision, so we store colW directly to avoid a redundant measure() call.
+  const wdthCache = new Map();
+
+  for (let to = 1; to < C; to++) {
+    const isLast = cands[to].kind === 'end';
+    for (let from = to - 1; from >= 0; from--) {
+      if (!isFinite(dp[from])) continue;
+      const f = cands[from].seg, t = cands[to].seg;
+
+      let canvasNat = 0;
+      for (let i = f; i < t; i++) {
+        if (segs[i] !== SHY) canvasNat += wids[i];
+      }
+      if (canvasNat > colW * 2) break;
+
+      let lineStr = '';
+      for (let i = f; i < t; i++) { if (segs[i] !== SHY) lineStr += segs[i]; }
+      lineStr = lineStr.trimEnd();
+      const actualW = lineStr ? measure(lineStr, font.wdthDefault, sz, font.family) : 0;
+      if (actualW > colW) break;
+
+      // River penalty using actual stretched wdth for accurate space positions.
+      // Last line: bad=0 so skip the expensive wdth lookup entirely.
+      let curSpaces = null;
+      let riverPenalty = 0;
+      if (!isLast) {
+        let entry = wdthCache.get(lineStr);
+        if (!entry) {
+          const { v: wdthVal, cl } = stretchyWdth(lineStr, colW, sz, font);
+          // cl:null → binary search converged; rendered width ≈ colW, no extra call needed.
+          // cl:max/min → font is capped; measure the actual rendered width.
+          const measuredW = cl === null ? colW : measure(lineStr, wdthVal, sz, font.family);
+          entry = { v: wdthVal, w: measuredW };
+          wdthCache.set(lineStr, entry);
+        }
+        curSpaces = tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, entry.w, colW, entry.v);
+        const adjSpaces = prevLineSpaces[from];
+        if (adjSpaces) {
+          for (const a of curSpaces) {
+            for (const b of adjSpaces) {
+              const ov = Math.min(a.r, b.r) - Math.max(a.l, b.l);
+              if (ov <= 0) continue;
+              const j = ov / (a.w + b.w - ov);
+              if (j > riverPenalty) riverPenalty = j;
+            }
+          }
+        }
+      }
+
+      const bad = isLast ? 0 : (((colW - actualW) / colW) ** 2) * 1000 + riverPenalty * RIVER_W;
+      const cost = dp[from] + bad;
+      if (cost < dp[to]) {
+        dp[to] = cost;
+        prev[to] = from;
+        prevLineSpaces[to] = curSpaces ?? [];
+      }
+    }
+  }
+
+  const breaks = [];
+  let cur = C - 1;
+  while (cur > 0) {
+    if (prev[cur] === -1) { cur--; continue; }
+    breaks.push(cur); cur = prev[cur];
+  }
+  breaks.reverse();
+
+  const lines = [];
+  let fi = 0;
+  for (const ti of breaks) {
+    const fSeg = cands[fi].seg, tSeg = cands[ti].seg;
+    let lineText = '';
+    for (let i = fSeg; i < tSeg; i++) {
+      if (segs[i] !== SHY) lineText += segs[i];
+    }
+    lineText = lineText.trimEnd();
+    if (lineText) lines.push(lineText);
+    fi = ti;
+  }
+
+  return lines.filter(Boolean);
+}
+
 // ── Render ────────────────────────────────────────────
 function scheduleRender() {
   clearTimeout(renderTimer);
@@ -1272,14 +1387,19 @@ async function render() {
   colRegular.style.width  = `${colW}px`;
   colStretchy.style.width = `${colW}px`;
 
-  // Pre-break non-English text once and share between both panels.
-  const precomputedLines =
-    lang === 'ta' ? await layoutTamil(text, colW, sz, font) :
-    lang === 'ar' ? layoutArabic(text, colW, sz, font) :
-    null;
+  // Tamil uses separate DPs for the two columns so each can apply the correct
+  // font-stretch model for its river penalty.  Arabic is the same in both.
+  let normalLines = null, stretchyLines = null;
+  if (lang === 'ta') {
+    normalLines   = await layoutTamil(text, colW, sz, font);
+    if (renderId !== myId) return;
+    stretchyLines = await layoutTamilStretchy(text, colW, sz, font);
+  } else if (lang === 'ar') {
+    normalLines = stretchyLines = layoutArabic(text, colW, sz, font);
+  }
 
-  renderRegular(text, colW, sz, lang, font, precomputedLines);
-  await renderStretchy(text, colW, sz, lang, font, precomputedLines);
+  renderRegular(text, colW, sz, lang, font, normalLines);
+  await renderStretchy(text, colW, sz, lang, font, stretchyLines);
   updateColWidthMin();
 }
 
@@ -1288,7 +1408,7 @@ function renderRegular(text, colW, sz, lang, font, precomputedLines) {
 
   if (lang === 'ta' || lang === 'ar') {
     const isAr = lang === 'ar';
-    const lines = precomputedLines ?? layoutArabic(text, colW, sz, font);
+    const lines = precomputedLines;
     const frag = document.createDocumentFragment();
     for (let i = 0; i < lines.length; i++) {
       if (!lines[i]) continue;
@@ -1341,8 +1461,7 @@ async function renderStretchy(text, colW, sz, lang, font, precomputedLines) {
   try {
     lines = lang === 'en'
       ? await layoutEnglish(text, colW, sz, font)
-      : (precomputedLines ??
-          (lang === 'ar' ? layoutArabic(text, colW, sz, font) : await layoutTamil(text, colW, sz, font)));
+      : precomputedLines;
   } catch (err) {
     colStretchy.innerHTML = `<p style="color:var(--err);font-size:13px">Layout error: ${err.message}</p>`;
     return;
