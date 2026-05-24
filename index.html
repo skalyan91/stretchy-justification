@@ -1108,22 +1108,31 @@ function layoutArabic(text, colW, sz, font) {
   return lines;
 }
 
-// Space intervals for a line: canvas widths scaled to targetW.
-// For non-last lines targetW = colW (stretched); for last line targetW = actualW.
-// Each entry is {l, r, w} — left edge, right edge, width — all in pixels.
-function tamilLineSpaces(segs, wids, f, t, SHY, targetW) {
-  let total = 0;
-  for (let i = f; i < t; i++) if (segs[i] !== SHY) total += wids[i];
-  const scale = total > 0 ? targetW / total : 1;
+// Space intervals for river detection.
+// lineStr: the line text as it will be measured (no SHY, trimEnd applied).
+// actualW: DOM-accurate width of lineStr at font.wdthDefault.
+// targetW: colW for non-last lines (apply font stretch); actualW for last line (no stretch).
+// Space left-edges are measured as DOM prefixes at wdthDefault, then scaled by targetW/actualW.
+// This correctly captures HarfBuzz context shaping. Canvas wids[] are used only for the
+// (small) space glyph width, where precision matters less.
+function tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, actualW, targetW) {
+  if (!lineStr || actualW <= 0) return [];
+  const scale = targetW / actualW;
+  let totalCanvas = 0;
+  for (let i = f; i < t; i++) if (segs[i] !== SHY) totalCanvas += wids[i];
   const spaces = [];
-  let cum = 0;
+  let charPos = 0;
   for (let i = f; i < t; i++) {
     if (segs[i] === SHY) continue;
     if (!segs[i].trim()) {
-      const l = cum * scale, w = wids[i] * scale;
+      const prefixW = charPos > 0
+        ? measure(lineStr.substring(0, charPos), font.wdthDefault, sz, font.family)
+        : 0;
+      const l = prefixW * scale;
+      const w = totalCanvas > 0 ? wids[i] / totalCanvas * targetW : 0;
       spaces.push({ l, r: l + w, w });
     }
-    cum += wids[i];
+    charPos += segs[i].length;
   }
   return spaces;
 }
@@ -1183,9 +1192,10 @@ async function layoutTamil(text, colW, sz, font) {
       const actualW = lineStr ? measure(lineStr, font.wdthDefault, sz, font.family) : 0;
       if (actualW > colW) break; // wider going left — stop inner loop
 
-      // River penalty: max Jaccard overlap of spaces in this line vs the previous line,
-      // using stretched positions (non-last lines scale to colW; last line stays at actualW).
-      const curSpaces = tamilLineSpaces(segs, wids, f, t, SHY, isLast ? actualW : colW);
+      // River penalty: max Jaccard overlap of spaces in this line vs the previous line.
+      // For non-last lines, targetW = colW applies the font stretch (as in the stretchy column).
+      // For the last line, targetW = actualW (no stretch — it renders at natural width).
+      const curSpaces = tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, actualW, isLast ? actualW : colW);
       let riverPenalty = 0;
       const adjSpaces = prevLineSpaces[from];
       if (adjSpaces) {
