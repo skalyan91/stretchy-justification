@@ -1108,6 +1108,26 @@ function layoutArabic(text, colW, sz, font) {
   return lines;
 }
 
+// Space intervals for a line: canvas widths scaled to targetW.
+// For non-last lines targetW = colW (stretched); for last line targetW = actualW.
+// Each entry is {l, r, w} — left edge, right edge, width — all in pixels.
+function tamilLineSpaces(segs, wids, f, t, SHY, targetW) {
+  let total = 0;
+  for (let i = f; i < t; i++) if (segs[i] !== SHY) total += wids[i];
+  const scale = total > 0 ? targetW / total : 1;
+  const spaces = [];
+  let cum = 0;
+  for (let i = f; i < t; i++) {
+    if (segs[i] === SHY) continue;
+    if (!segs[i].trim()) {
+      const l = cum * scale, w = wids[i] * scale;
+      spaces.push({ l, r: l + w, w });
+    }
+    cum += wids[i];
+  }
+  return spaces;
+}
+
 // ── Tamil line-breaking: Knuth-Plass DP, bypasses UAX #14 CSS ──
 // Ported from the justification-comparison demo in the Pretext repo.
 // Uses prepareWithSegments to get canvas-measured widths for each piece
@@ -1122,7 +1142,7 @@ async function layoutTamil(text, colW, sz, font) {
   const segs  = prepared.segments;
   const wids  = prepared.widths;
   const N     = segs.length;
-  const HUGE  = 1e8;
+  const RIVER_W = 200; // river penalty weight relative to underfill badness (max 1000)
 
   // Break candidates: {seg, kind} where seg is the segment index to START
   // the next line at.  'start'=paragraph start, 'space'=after a space,
@@ -1135,9 +1155,12 @@ async function layoutTamil(text, colW, sz, font) {
   cands.push({ seg: N, kind: 'end' });
 
   const C  = cands.length;
-  const dp   = new Float64Array(C).fill(Infinity);
-  const prev = new Int32Array(C).fill(-1);
+  const dp        = new Float64Array(C).fill(Infinity);
+  const prev      = new Int32Array(C).fill(-1);
   dp[0] = 0;
+  // prevLineSpaces[k] = space intervals of the optimal line ending at candidate k
+  const prevLineSpaces = new Array(C).fill(null);
+  prevLineSpaces[0] = [];
 
   for (let to = 1; to < C; to++) {
     const isLast = cands[to].kind === 'end';
@@ -1160,13 +1183,31 @@ async function layoutTamil(text, colW, sz, font) {
       const actualW = lineStr ? measure(lineStr, font.wdthDefault, sz, font.family) : 0;
       if (actualW > colW) break; // wider going left — stop inner loop
 
-      // Badness: squared underfill normalised to colW.
-      // Tamil words are short so justified spaces must be wide; the
-      // demo's English-calibrated river/tight thresholds are not used.
-      const bad = isLast ? 0 : (((colW - actualW) / colW) ** 2) * 1000;
+      // River penalty: max Jaccard overlap of spaces in this line vs the previous line,
+      // using stretched positions (non-last lines scale to colW; last line stays at actualW).
+      const curSpaces = tamilLineSpaces(segs, wids, f, t, SHY, isLast ? actualW : colW);
+      let riverPenalty = 0;
+      const adjSpaces = prevLineSpaces[from];
+      if (adjSpaces) {
+        for (const a of curSpaces) {
+          for (const b of adjSpaces) {
+            const ov = Math.min(a.r, b.r) - Math.max(a.l, b.l);
+            if (ov <= 0) continue;
+            const j = ov / (a.w + b.w - ov);
+            if (j > riverPenalty) riverPenalty = j;
+          }
+        }
+      }
+
+      // Badness: squared underfill normalised to colW, plus river penalty.
+      const bad = isLast ? 0 : (((colW - actualW) / colW) ** 2) * 1000 + riverPenalty * RIVER_W;
 
       const cost = dp[from] + bad;
-      if (cost < dp[to]) { dp[to] = cost; prev[to] = from; }
+      if (cost < dp[to]) {
+        dp[to] = cost;
+        prev[to] = from;
+        prevLineSpaces[to] = curSpaces;
+      }
     }
   }
 
