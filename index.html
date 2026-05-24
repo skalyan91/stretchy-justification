@@ -539,6 +539,23 @@
   </section>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/hyphenopoly@6.1.0/Hyphenopoly_Loader.js"></script>
+<script>
+Hyphenopoly.config({
+  require: { "en-us": "FORCEHYPHENOPOLY", "ta": "FORCEHYPHENOPOLY" },
+  paths: {
+    maindir:    "https://cdn.jsdelivr.net/npm/hyphenopoly@6.1.0/",
+    patterndir: "https://cdn.jsdelivr.net/npm/hyphenopoly@6.1.0/patterns/"
+  },
+  setup: {
+    selectors: {
+      ".hyphenate": { hyphen: "­", leftmin: 2, rightmin: 2, minWordLength: 4 }
+    },
+    CORScredentials: "omit"
+  }
+});
+</script>
+
 <script type="module">
 import { prepareWithSegments, layoutWithLines }
   from 'https://cdn.jsdelivr.net/npm/@chenglou/pretext@0.0.7/+esm';
@@ -547,19 +564,6 @@ import * as _ot from 'https://cdn.jsdelivr.net/npm/opentype.js/+esm';
 const parseFont = typeof _ot.parse === 'function' ? _ot.parse
   : typeof _ot.default?.parse === 'function' ? _ot.default.parse
   : null;
-
-import _Hypher from 'https://cdn.jsdelivr.net/npm/hypher@0.2.5/+esm';
-const HypherCtor = typeof _Hypher === 'function' ? _Hypher
-  : typeof _Hypher.default === 'function' ? _Hypher.default
-  : null;
-
-import _enPatterns from 'https://cdn.jsdelivr.net/npm/hyphenation.en-us@0.2.1/+esm';
-// hyphenation.en-us may export as default or named; normalise to an object
-const enPatterns = (_enPatterns && _enPatterns.patterns) ? _enPatterns
-  : (_enPatterns?.default?.patterns) ? _enPatterns.default
-  : null;
-
-const hypher = HypherCtor && enPatterns ? new HypherCtor(enPatterns) : null;
 
 // ── Preset texts ──────────────────────────────────────
 const ENGLISH = 'From a little after two o’clock until almost sundown of the long still hot weary dead September afternoon they sat in what Miss Coldfield still called the office because her father had called it that—a dim hot airless room with the blinds all closed and fastened for forty-three summers because when she was a girl someone had believed that light and moving air carried heat and that dark was always cooler, and which (as the sun shone fuller and fuller on that side of the house) became latticed with yellow slashes full of dust motes which Quentin thought of as being flecks of the dead old dried paint. There was a wistaria vine blooming for the second time that summer on a wooden trellis before one window, into which sparrows came now and then in random gusts, making a dry vivid dusty sound before going away: and opposite Quentin, Miss Coldfield in the eternal black which she had worn for forty-three years now,';
@@ -1000,42 +1004,55 @@ function addSpaceHighlightsSingleDiv(div, naturalSpW, sz) {
   else renderSpaceHighlights(lines, lineH, naturalSpW);
 }
 
-// ── English: Knuth-Liang hyphenation via hypher ───────
-function insertSoftHyphens(text) {
-  if (!hypher) return text;
-  return text.replace(/[a-z]{4,}/gi, w => hypher.hyphenate(w).join('\u00AD'));
+// ── English: Knuth-Liang hyphenation via Hyphenopoly ──
+async function insertSoftHyphens(text) {
+  const hyphenate = await window.Hyphenopoly.hyphenators["en-us"];
+  return hyphenate(text, ".hyphenate");
 }
 
 // ── English line-breaking: Pretext + soft hyphens ─────
-function layoutEnglish(text, colW, sz, font) {
-  const hyphenated = insertSoftHyphens(text);
+async function layoutEnglish(text, colW, sz, font) {
+  const hyphenated = await insertSoftHyphens(text);
   const prep = prepareWithSegments(hyphenated, `${sz}px ${font.family}`);
   const { lines } = layoutWithLines(prep, colW, sz * 1.45);
   return lines.map(l => (l.text || '').trimEnd()).filter(Boolean);
 }
 
-// ── Tamil soft-hyphen insertion ───────────────────────
-// Inserts U+00AD at valid sub-word break points within each space-delimited token.
-// Forbidden positions (no SHY inserted before cluster[i]):
-//   • i < 2              — after-first-cluster rule
-//   • i > length−2       — before-last-cluster rule
-//   • cluster[i] ends with U+0BCD (virama = puḷḷi) — never start a line with a dead consonant
-function insertTamilSoftHyphens(text) {
+// ── Tamil: Knuth-Liang hyphenation via Hyphenopoly ────
+// Postprocess Hyphenopoly's output: remove SHY at positions
+// forbidden by Tamil orthographic conventions:
+//   • after the first grapheme cluster  (ci < 2)
+//   • before the last grapheme cluster  (ci > n−2)
+//   • before a cluster ending in virāma (dead consonant — puḷḷi U+0BCD)
+function postprocessTamilHyphens(text) {
   const seg = new Intl.Segmenter('ta', { granularity: 'grapheme' });
+  const SHY = '­';
   return text.split(' ').map(word => {
-    const clusters = Array.from(seg.segment(word), s => s.segment);
-    if (clusters.length < 4) return word;
-    const out = [clusters[0]];
-    for (let i = 1; i < clusters.length; i++) {
-      const isPulli = clusters[i].at(-1) === '்';
-      const isPunct = /^\p{P}/u.test(clusters[i]);
-      // No break after the first glyph (i < 2), before the last glyph (i > n−2),
-      // before a glyph with puḷḷi, or before any punctuation mark.
-      if (i >= 2 && i <= clusters.length - 2 && !isPulli && !isPunct) out.push('­');
-      out.push(clusters[i]);
+    if (!/[஀-௿]/.test(word)) return word;
+    const pureClusters = Array.from(
+      seg.segment(word.replaceAll(SHY, '')), s => s.segment
+    );
+    const n = pureClusters.length;
+    let ci = 0;
+    const out = [];
+    for (const s of seg.segment(word)) {
+      if (s.segment === SHY) {
+        const hasPulli = pureClusters[ci]?.at(-1) === '்';
+        if (ci >= 2 && ci <= n - 2 && !hasPulli) {
+          out.push(SHY);
+        }
+      } else {
+        out.push(s.segment);
+        ci++;
+      }
     }
     return out.join('');
   }).join(' ');
+}
+
+async function insertTamilSoftHyphens(text) {
+  const hyphenate = await window.Hyphenopoly.hyphenators["ta"];
+  return postprocessTamilHyphens(hyphenate(text, ".hyphenate"));
 }
 
 // ── Arabic line-breaking: Range API, word boundaries only ────
@@ -1091,61 +1108,92 @@ function layoutArabic(text, colW, sz, font) {
   return lines;
 }
 
-// ── Tamil line-breaking: Range API + controlled soft hyphens ──
-// U+00AD has Grapheme_Cluster_Break=Control (UAX #29 GB4/GB5),
-// so the segmenter yields it as its own cluster — easy to skip.
-function layoutTamil(text, colW, sz, font) {
-  const processedText = insertTamilSoftHyphens(text);
-  const div = document.createElement('div');
-  Object.assign(div.style, {
-    position:              'fixed',
-    top:                   '-9999px',
-    left:                  '0',
-    width:                 `${colW}px`,
-    fontFamily:            `'${font.family}', system-ui, sans-serif`,
-    fontSize:              `${sz}px`,
-    lineHeight:            `${sz * 1.45}px`,
-    fontVariationSettings: `'wdth' ${font.wdthDefault}`,
-    wordBreak:             'normal',
-    hyphens:               'manual',
-    whiteSpace:            'normal',
-    visibility:            'hidden',
-  });
-  div.setAttribute('lang', 'ta');
-  div.textContent = processedText;
-  document.body.appendChild(div);
-  void div.offsetHeight;
+// ── Tamil line-breaking: Knuth-Plass DP, bypasses UAX #14 CSS ──
+// Ported from the justification-comparison demo in the Pretext repo.
+// Uses prepareWithSegments to get canvas-measured widths for each piece
+// (words/syllables split by Hyphenopoly SHY), then runs DP over all
+// break candidates (spaces + allowed SHY positions) to minimise badness.
+async function layoutTamil(text, colW, sz, font) {
+  const processedText = await insertTamilSoftHyphens(text);
+  const prepared = prepareWithSegments(processedText, `${sz}px '${font.family}'`);
+  if (!prepared.segments.length) return [];
 
-  const node = div.firstChild;
-  const lines = [];
-  const segmenter = new Intl.Segmenter('ta', { granularity: 'grapheme' });
-  const LINE_H = sz * 1.45;
-  let lineSegments = [], prevTop = null;
+  const SHY = '­';
+  const segs  = prepared.segments;
+  const wids  = prepared.widths;
+  const N     = segs.length;
+  const HUGE  = 1e8;
 
-  for (const { index, segment } of segmenter.segment(processedText)) {
-    if (segment === '­') continue; // layout hint only — never display
+  // Break candidates: {seg, kind} where seg is the segment index to START
+  // the next line at.  'start'=paragraph start, 'space'=after a space,
+  // 'shy'=after a soft-hyphen, 'end'=past the last segment.
+  const cands = [{ seg: 0, kind: 'start' }];
+  for (let i = 0; i < N; i++) {
+    if (segs[i] === SHY  && i + 1 < N) { cands.push({ seg: i + 1, kind: 'shy'  }); continue; }
+    if (!segs[i].trim() && i + 1 < N)  { cands.push({ seg: i + 1, kind: 'space' }); }
+  }
+  cands.push({ seg: N, kind: 'end' });
 
-    const range = document.createRange();
-    range.setStart(node, index);
-    range.setEnd(node, index + segment.length);
-    const rects = range.getClientRects();
-    if (!rects.length) continue;
-    const top = rects[0].top;
+  const C  = cands.length;
+  const dp   = new Float64Array(C).fill(Infinity);
+  const prev = new Int32Array(C).fill(-1);
+  dp[0] = 0;
 
-    if (prevTop !== null && top > prevTop + LINE_H * 0.5) {
-      const lineText = lineSegments.join('').trim();
-      if (lineText) lines.push(lineText);
-      lineSegments = [];
+  for (let to = 1; to < C; to++) {
+    const isLast = cands[to].kind === 'end';
+    for (let from = to - 1; from >= 0; from--) {
+      if (!isFinite(dp[from])) continue;
+      const f = cands[from].seg, t = cands[to].seg;
+
+      // Fast canvas-width sum for early-termination only.
+      let canvasNat = 0;
+      for (let i = f; i < t; i++) {
+        if (segs[i] !== SHY) canvasNat += wids[i];
+      }
+      if (canvasNat > colW * 2) break; // monotonically wider going left
+
+      // Accurate DOM measurement (whole-line) for the feasibility check.
+      // Canvas per-segment sums underestimate Tamil due to HarfBuzz context.
+      let lineStr = '';
+      for (let i = f; i < t; i++) { if (segs[i] !== SHY) lineStr += segs[i]; }
+      lineStr = lineStr.trimEnd();
+      const actualW = lineStr ? measure(lineStr, font.wdthDefault, sz, font.family) : 0;
+      if (actualW > colW) break; // wider going left — stop inner loop
+
+      // Badness: squared underfill normalised to colW.
+      // Tamil words are short so justified spaces must be wide; the
+      // demo's English-calibrated river/tight thresholds are not used.
+      const bad = isLast ? 0 : (((colW - actualW) / colW) ** 2) * 1000;
+
+      const cost = dp[from] + bad;
+      if (cost < dp[to]) { dp[to] = cost; prev[to] = from; }
     }
-    lineSegments.push(segment);
-    prevTop = top;
   }
 
-  const lastLine = lineSegments.join('').trim();
-  if (lastLine) lines.push(lastLine);
-  document.body.removeChild(div);
+  // Backtrack through the DP
+  const breaks = [];
+  let cur = C - 1;
+  while (cur > 0) {
+    if (prev[cur] === -1) { cur--; continue; }
+    breaks.push(cur); cur = prev[cur];
+  }
+  breaks.reverse();
 
-  return lines;
+  // Materialise line strings from the optimal break sequence.
+  const lines = [];
+  let fi = 0;
+  for (const ti of breaks) {
+    const fSeg = cands[fi].seg, tSeg = cands[ti].seg;
+    let lineText = '';
+    for (let i = fSeg; i < tSeg; i++) {
+      if (segs[i] !== SHY) lineText += segs[i];
+    }
+    lineText = lineText.trimEnd();
+    if (lineText) lines.push(lineText);
+    fi = ti;
+  }
+
+  return lines.filter(Boolean);
 }
 
 // ── Render ────────────────────────────────────────────
@@ -1175,12 +1223,12 @@ async function render() {
 
   // Pre-break non-English text once and share between both panels.
   const precomputedLines =
-    lang === 'ta' ? layoutTamil(text, colW, sz, font) :
+    lang === 'ta' ? await layoutTamil(text, colW, sz, font) :
     lang === 'ar' ? layoutArabic(text, colW, sz, font) :
     null;
 
   renderRegular(text, colW, sz, lang, font, precomputedLines);
-  renderStretchy(text, colW, sz, lang, font, precomputedLines);
+  await renderStretchy(text, colW, sz, lang, font, precomputedLines);
   updateColWidthMin();
 }
 
@@ -1189,8 +1237,7 @@ function renderRegular(text, colW, sz, lang, font, precomputedLines) {
 
   if (lang === 'ta' || lang === 'ar') {
     const isAr = lang === 'ar';
-    const lines = precomputedLines ??
-      (isAr ? layoutArabic(text, colW, sz, font) : layoutTamil(text, colW, sz, font));
+    const lines = precomputedLines ?? layoutArabic(text, colW, sz, font);
     const frag = document.createDocumentFragment();
     for (let i = 0; i < lines.length; i++) {
       if (!lines[i]) continue;
@@ -1236,15 +1283,15 @@ function renderRegular(text, colW, sz, lang, font, precomputedLines) {
   if (highlightSpaces || showRivers) addSpaceHighlightsSingleDiv(div, naturalSpaceWidth(font, sz), sz);
 }
 
-function renderStretchy(text, colW, sz, lang, font, precomputedLines) {
+async function renderStretchy(text, colW, sz, lang, font, precomputedLines) {
   colStretchy.innerHTML = '';
 
   let lines;
   try {
     lines = lang === 'en'
-      ? layoutEnglish(text, colW, sz, font)
+      ? await layoutEnglish(text, colW, sz, font)
       : (precomputedLines ??
-          (lang === 'ar' ? layoutArabic(text, colW, sz, font) : layoutTamil(text, colW, sz, font)));
+          (lang === 'ar' ? layoutArabic(text, colW, sz, font) : await layoutTamil(text, colW, sz, font)));
   } catch (err) {
     colStretchy.innerHTML = `<p style="color:var(--err);font-size:13px">Layout error: ${err.message}</p>`;
     return;
