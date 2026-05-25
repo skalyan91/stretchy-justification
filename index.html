@@ -776,25 +776,25 @@ function updateWdthUI(font) {
 
 wdthLoRange.addEventListener('input', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
-  font.wdthLo = Math.min(+wdthLoRange.value, font.wdthHi - 1);
+  font.wdthLo = Math.min(+wdthLoRange.value, font.wdthDefault);
   wdthLoRange.value = font.wdthLo; wdthLoNum.value = font.wdthLo;
   updateWdthFill(font); scheduleRender();
 });
 wdthHiRange.addEventListener('input', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
-  font.wdthHi = Math.max(+wdthHiRange.value, font.wdthLo + 1);
+  font.wdthHi = Math.max(+wdthHiRange.value, font.wdthDefault);
   wdthHiRange.value = font.wdthHi; wdthHiNum.value = font.wdthHi;
   updateWdthFill(font); scheduleRender();
 });
 wdthLoNum.addEventListener('change', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
-  font.wdthLo = Math.max(font.wdthMin, Math.min(+wdthLoNum.value, font.wdthHi - 1));
+  font.wdthLo = Math.max(font.wdthMin, Math.min(+wdthLoNum.value, font.wdthDefault));
   wdthLoNum.value = font.wdthLo; wdthLoRange.value = font.wdthLo;
   updateWdthFill(font); scheduleRender();
 });
 wdthHiNum.addEventListener('change', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
-  font.wdthHi = Math.min(font.wdthMax, Math.max(+wdthHiNum.value, font.wdthLo + 1));
+  font.wdthHi = Math.min(font.wdthMax, Math.max(+wdthHiNum.value, font.wdthDefault));
   wdthHiNum.value = font.wdthHi; wdthHiRange.value = font.wdthHi;
   updateWdthFill(font); scheduleRender();
 });
