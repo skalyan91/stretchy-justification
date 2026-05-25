@@ -350,14 +350,13 @@
     .mobile-bar {
       display: none;
       align-items: center;
-      gap: 12px;
-      padding: 0 16px;
+      gap: 10px;
+      padding: 0 14px;
       height: 44px;
       flex-shrink: 0;
       background: var(--panel);
       border-bottom: 1px solid var(--border);
     }
-    .mobile-title { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
 
     .hamburger-btn {
       width: 32px; height: 32px;
@@ -371,6 +370,83 @@
       display: block; width: 18px; height: 2px;
       background: var(--fg); border-radius: 1px;
     }
+
+    /* ── Bar controls (inside .mobile-bar) ───────────────── */
+    .bar-controls {
+      display: flex;
+      align-items: center;
+      flex: 1;
+      min-width: 0;
+      gap: 8px;
+    }
+    .bar-field {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .bar-field-label {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .bar-num {
+      width: 50px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 3px 4px;
+      font-family: var(--ui);
+      font-size: 12px;
+      text-align: right;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    .bar-num:focus { outline: 1.5px solid var(--fg); border-color: transparent; }
+    .bar-check-label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .bar-check-label input[type="checkbox"] {
+      accent-color: var(--fg);
+      width: 13px; height: 13px;
+      cursor: pointer; flex-shrink: 0;
+    }
+    .bar-sep {
+      width: 1px; height: 16px;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+    .bar-drawer-btn {
+      flex-shrink: 0;
+      margin-left: auto;
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      background: none;
+      font-family: var(--ui);
+      font-size: 11.5px;
+      cursor: pointer;
+      color: var(--fg);
+    }
+    .bar-drawer-btn:hover { background: var(--bg); }
+    .bar-drawer-btn.open  { background: var(--bg); border-color: var(--fg); }
+
+    /* ── Wdth drawer ─────────────────────────────────────── */
+    .bar-drawer {
+      display: none;
+      position: fixed;
+      top: 44px;
+      left: 0; right: 0;
+      z-index: 100;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px 14px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    }
+    .bar-drawer.open { display: block; }
 
     /* Sidebar close button (mobile only) */
     .sidebar-header-row {
@@ -431,6 +507,24 @@
       }
 
       .cw-slider-item { display: none; }
+      #sidebar-settings { display: none; }
+      #sidebar-wdth     { display: none; }
+
+      /* Textarea fills remaining sidebar height */
+      aside { overflow-y: hidden; }
+      .sidebar-header,
+      .s-section  { flex-shrink: 0; }
+      #sidebar-text {
+        flex: 1;
+        min-height: 0;
+      }
+      #sidebar-text textarea {
+        flex: 1;
+        min-height: 60px;
+        max-height: none;
+        resize: none;
+        overflow-y: auto;
+      }
     }
   </style>
 </head>
@@ -442,7 +536,38 @@
   <button class="hamburger-btn" id="hamburger-btn" aria-label="Open settings">
     <span></span><span></span><span></span>
   </button>
-  <span class="mobile-title">Stretchy Justification</span>
+  <div class="bar-controls">
+    <div class="bar-field">
+      <span class="bar-field-label">Size</span>
+      <input type="number" id="hb-fs-num" class="bar-num" min="8" max="96" value="24">
+    </div>
+    <div class="bar-sep"></div>
+    <label class="bar-check-label">
+      <input type="checkbox" id="hb-highlight-cb" checked>
+      Spaces
+    </label>
+    <label class="bar-check-label">
+      <input type="checkbox" id="hb-rivers-cb">
+      Rivers
+    </label>
+    <button class="bar-drawer-btn" id="wdth-drawer-btn" aria-expanded="false">wdth ▾</button>
+  </div>
+</div>
+<div class="bar-drawer" id="wdth-drawer">
+  <div class="s-label" style="margin-bottom:8px">Width axis subset</div>
+  <div class="range-dual-wrap">
+    <div class="range-track-bg"></div>
+    <div class="range-fill" id="hb-wdth-fill"></div>
+    <input type="range" id="hb-wdth-lo-range">
+    <input type="range" id="hb-wdth-hi-range">
+  </div>
+  <div class="wdth-num-row" style="margin-top:6px">
+    <span class="wdth-num-label">Min</span>
+    <input type="number" id="hb-wdth-lo-num">
+    <span class="wdth-spacer"></span>
+    <span class="wdth-num-label">Max</span>
+    <input type="number" id="hb-wdth-hi-num">
+  </div>
 </div>
 <div class="backdrop" id="backdrop"></div>
 
@@ -464,7 +589,7 @@
     <div id="font-info">Loading fonts…</div>
   </div>
 
-  <div class="s-section">
+  <div class="s-section" id="sidebar-text">
     <div class="s-label">Text</div>
     <div class="preset-row">
       <button class="preset-btn" id="btn-english">English</button>
@@ -474,7 +599,7 @@
     <textarea id="text-input" placeholder="Type or paste text, or use a preset…" rows="5"></textarea>
   </div>
 
-  <div class="s-section">
+  <div class="s-section" id="sidebar-settings">
     <div class="s-label">Settings</div>
     <div class="slider-stack">
       <div class="slider-item cw-slider-item">
@@ -508,7 +633,7 @@
     </label>
   </div>
 
-  <div class="s-section">
+  <div class="s-section" id="sidebar-wdth">
     <div class="s-label">Width axis subset</div>
     <div class="range-dual-wrap">
       <div class="range-track-bg"></div>
@@ -615,6 +740,18 @@ const wdthLoNum     = get('wdth-lo-num');
 const wdthHiNum     = get('wdth-hi-num');
 const wdthFillEl    = get('wdth-fill');
 
+// ── Bar control DOM refs ──────────────────────────────
+const hbFsNum       = get('hb-fs-num');
+const hbHighlightCb = get('hb-highlight-cb');
+const hbRiversCb    = get('hb-rivers-cb');
+const wdthDrawerBtn = get('wdth-drawer-btn');
+const wdthDrawerEl  = get('wdth-drawer');
+const hbWdthLoRange = get('hb-wdth-lo-range');
+const hbWdthHiRange = get('hb-wdth-hi-range');
+const hbWdthLoNum   = get('hb-wdth-lo-num');
+const hbWdthHiNum   = get('hb-wdth-hi-num');
+const hbWdthFillEl  = get('hb-wdth-fill');
+
 // ── Mobile helpers ────────────────────────────────────
 function isMobile() { return window.innerWidth <= 768; }
 function mobileColW() { return Math.max(100, window.innerWidth - 96); }
@@ -628,8 +765,12 @@ const panels       = document.querySelectorAll('.panel');
 function openSidebar()  { sidebarEl.classList.add('open');    backdropEl.classList.add('visible'); }
 function closeSidebar() { sidebarEl.classList.remove('open'); backdropEl.classList.remove('visible'); }
 
-hamburgerBtn.addEventListener('click', () =>
-  sidebarEl.classList.contains('open') ? closeSidebar() : openSidebar());
+hamburgerBtn.addEventListener('click', () => {
+  wdthDrawerEl.classList.remove('open');
+  wdthDrawerBtn.classList.remove('open');
+  wdthDrawerBtn.setAttribute('aria-expanded', 'false');
+  sidebarEl.classList.contains('open') ? closeSidebar() : openSidebar();
+});
 backdropEl.addEventListener('click',  closeSidebar);
 sidebarClose.addEventListener('click', closeSidebar);
 
@@ -736,15 +877,20 @@ bindSlider(fsRange, fsNum);
 // Font size changes alter line count, so re-compute the initial column width.
 fsRange.addEventListener('input',  resetColWidth);
 fsNum.addEventListener('change',   resetColWidth);
+// Keep bar font-size field in sync when sidebar slider changes.
+fsRange.addEventListener('input',  () => { hbFsNum.value = fsRange.value; });
+fsNum.addEventListener('change',   () => { hbFsNum.value = fsNum.value; });
 
 highlightCb.addEventListener('change', () => {
   highlightSpaces = highlightCb.checked;
-  if (highlightSpaces && showRivers) { showRivers = false; riversCb.checked = false; }
+  hbHighlightCb.checked = highlightSpaces;
+  if (highlightSpaces && showRivers) { showRivers = false; riversCb.checked = false; hbRiversCb.checked = false; }
   scheduleRender();
 });
 riversCb.addEventListener('change', () => {
   showRivers = riversCb.checked;
-  if (showRivers && highlightSpaces) { highlightSpaces = false; highlightCb.checked = false; }
+  hbRiversCb.checked = showRivers;
+  if (showRivers && highlightSpaces) { highlightSpaces = false; highlightCb.checked = false; hbHighlightCb.checked = false; }
   scheduleRender();
 });
 
@@ -752,19 +898,21 @@ riversCb.addEventListener('change', () => {
 // Fill tracks from 7px to (100%−7px), matching the 13px thumb radius offset.
 // Formula: thumb_x = 7px + pct/100 * (100% − 14px)
 //        = calc(${pct}% − ${pct*0.14}px + 7px)
-function updateWdthFill(font) {
+function setFill(fillEl, font) {
   const range = font.wdthMax - font.wdthMin;
   if (range <= 0) {
-    wdthFillEl.style.left  = '7px';
-    wdthFillEl.style.width = 'calc(100% - 14px)';
+    fillEl.style.left  = '7px';
+    fillEl.style.width = 'calc(100% - 14px)';
     return;
   }
   const loPct  = (font.wdthLo - font.wdthMin) / range * 100;
   const hiPct  = (font.wdthHi - font.wdthMin) / range * 100;
   const spanPct = hiPct - loPct;
-  wdthFillEl.style.left  = `calc(${loPct.toFixed(3)}% - ${(loPct   * 0.14).toFixed(3)}px + 7px)`;
-  wdthFillEl.style.width = `calc(${spanPct.toFixed(3)}% - ${(spanPct * 0.14).toFixed(3)}px)`;
+  fillEl.style.left  = `calc(${loPct.toFixed(3)}% - ${(loPct   * 0.14).toFixed(3)}px + 7px)`;
+  fillEl.style.width = `calc(${spanPct.toFixed(3)}% - ${(spanPct * 0.14).toFixed(3)}px)`;
 }
+function updateWdthFill(font)   { setFill(wdthFillEl, font); }
+function updateHbWdthFill(font) { setFill(hbWdthFillEl, font); }
 
 function updateWdthUI(font) {
   wdthLoRange.min = font.wdthMin; wdthLoRange.max = font.wdthMax; wdthLoRange.value = font.wdthLo;
@@ -772,31 +920,111 @@ function updateWdthUI(font) {
   wdthLoNum.min   = font.wdthMin; wdthLoNum.max   = font.wdthMax; wdthLoNum.value   = font.wdthLo;
   wdthHiNum.min   = font.wdthMin; wdthHiNum.max   = font.wdthMax; wdthHiNum.value   = font.wdthHi;
   updateWdthFill(font);
+  hbWdthLoRange.min = font.wdthMin; hbWdthLoRange.max = font.wdthMax; hbWdthLoRange.value = font.wdthLo;
+  hbWdthHiRange.min = font.wdthMin; hbWdthHiRange.max = font.wdthMax; hbWdthHiRange.value = font.wdthHi;
+  hbWdthLoNum.min   = font.wdthMin; hbWdthLoNum.max   = font.wdthMax; hbWdthLoNum.value   = font.wdthLo;
+  hbWdthHiNum.min   = font.wdthMin; hbWdthHiNum.max   = font.wdthMax; hbWdthHiNum.value   = font.wdthHi;
+  updateHbWdthFill(font);
+  hbFsNum.value = fsNum.value;
+  hbHighlightCb.checked = highlightSpaces;
+  hbRiversCb.checked    = showRivers;
 }
 
 wdthLoRange.addEventListener('input', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
   font.wdthLo = Math.min(+wdthLoRange.value, font.wdthDefault);
   wdthLoRange.value = font.wdthLo; wdthLoNum.value = font.wdthLo;
-  updateWdthFill(font); scheduleRender();
+  hbWdthLoRange.value = font.wdthLo; hbWdthLoNum.value = font.wdthLo;
+  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
 });
 wdthHiRange.addEventListener('input', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
   font.wdthHi = Math.max(+wdthHiRange.value, font.wdthDefault);
   wdthHiRange.value = font.wdthHi; wdthHiNum.value = font.wdthHi;
-  updateWdthFill(font); scheduleRender();
+  hbWdthHiRange.value = font.wdthHi; hbWdthHiNum.value = font.wdthHi;
+  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
 });
 wdthLoNum.addEventListener('change', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
   font.wdthLo = Math.max(font.wdthMin, Math.min(+wdthLoNum.value, font.wdthDefault));
   wdthLoNum.value = font.wdthLo; wdthLoRange.value = font.wdthLo;
-  updateWdthFill(font); scheduleRender();
+  hbWdthLoRange.value = font.wdthLo; hbWdthLoNum.value = font.wdthLo;
+  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
 });
 wdthHiNum.addEventListener('change', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
   font.wdthHi = Math.min(font.wdthMax, Math.max(+wdthHiNum.value, font.wdthDefault));
   wdthHiNum.value = font.wdthHi; wdthHiRange.value = font.wdthHi;
-  updateWdthFill(font); scheduleRender();
+  hbWdthHiRange.value = font.wdthHi; hbWdthHiNum.value = font.wdthHi;
+  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
+});
+
+// ── Bar control event listeners ──────────────────────
+hbFsNum.addEventListener('change', () => {
+  const v = Math.max(+hbFsNum.min, Math.min(+hbFsNum.max, +hbFsNum.value || 0));
+  hbFsNum.value = v;
+  fsNum.value = v; fsRange.value = v;
+  resetColWidth();
+  scheduleRender();
+});
+
+hbHighlightCb.addEventListener('change', () => {
+  highlightSpaces = hbHighlightCb.checked;
+  highlightCb.checked = highlightSpaces;
+  if (highlightSpaces && showRivers) { showRivers = false; riversCb.checked = false; hbRiversCb.checked = false; }
+  scheduleRender();
+});
+hbRiversCb.addEventListener('change', () => {
+  showRivers = hbRiversCb.checked;
+  riversCb.checked = showRivers;
+  if (showRivers && highlightSpaces) { highlightSpaces = false; highlightCb.checked = false; hbHighlightCb.checked = false; }
+  scheduleRender();
+});
+
+// Wdth drawer controls (mirror sidebar wdth listeners)
+hbWdthLoRange.addEventListener('input', () => {
+  const font = fontFor(detectLang(textarea.value.trim()));
+  font.wdthLo = Math.min(+hbWdthLoRange.value, font.wdthDefault);
+  hbWdthLoRange.value = font.wdthLo; hbWdthLoNum.value = font.wdthLo;
+  wdthLoRange.value = font.wdthLo; wdthLoNum.value = font.wdthLo;
+  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
+});
+hbWdthHiRange.addEventListener('input', () => {
+  const font = fontFor(detectLang(textarea.value.trim()));
+  font.wdthHi = Math.max(+hbWdthHiRange.value, font.wdthDefault);
+  hbWdthHiRange.value = font.wdthHi; hbWdthHiNum.value = font.wdthHi;
+  wdthHiRange.value = font.wdthHi; wdthHiNum.value = font.wdthHi;
+  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
+});
+hbWdthLoNum.addEventListener('change', () => {
+  const font = fontFor(detectLang(textarea.value.trim()));
+  font.wdthLo = Math.max(font.wdthMin, Math.min(+hbWdthLoNum.value, font.wdthDefault));
+  hbWdthLoNum.value = font.wdthLo; hbWdthLoRange.value = font.wdthLo;
+  wdthLoNum.value = font.wdthLo; wdthLoRange.value = font.wdthLo;
+  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
+});
+hbWdthHiNum.addEventListener('change', () => {
+  const font = fontFor(detectLang(textarea.value.trim()));
+  font.wdthHi = Math.min(font.wdthMax, Math.max(+hbWdthHiNum.value, font.wdthDefault));
+  hbWdthHiNum.value = font.wdthHi; hbWdthHiRange.value = font.wdthHi;
+  wdthHiNum.value = font.wdthHi; wdthHiRange.value = font.wdthHi;
+  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
+});
+
+// Wdth drawer toggle
+wdthDrawerBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  const isOpen = wdthDrawerEl.classList.toggle('open');
+  wdthDrawerBtn.classList.toggle('open', isOpen);
+  wdthDrawerBtn.setAttribute('aria-expanded', String(isOpen));
+});
+document.addEventListener('click', e => {
+  if (!wdthDrawerEl.classList.contains('open')) return;
+  if (!wdthDrawerEl.contains(e.target) && !wdthDrawerBtn.contains(e.target)) {
+    wdthDrawerEl.classList.remove('open');
+    wdthDrawerBtn.classList.remove('open');
+    wdthDrawerBtn.setAttribute('aria-expanded', 'false');
+  }
 });
 
 // ── Responsive column-width ceiling ──────────────────
