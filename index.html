@@ -1397,8 +1397,12 @@ async function layoutTamil(text, colW, sz, font) {
   const prev      = new Int32Array(C).fill(-1);
   dp[0] = 0;
   // prevLineSpaces[k] = space intervals of the optimal line ending at candidate k
+  // prevRiverScore[k] = overlap of that line with its own predecessor
+  //   (used to approximate a "next-line" check: when placing line i+1 after k,
+  //    riverPenalty = max(overlap(i+1, i), overlap(i, i-1)))
   const prevLineSpaces = new Array(C).fill(null);
   prevLineSpaces[0] = [];
+  const prevRiverScore = new Float64Array(C);
 
   for (let to = 1; to < C; to++) {
     const isLast = cands[to].kind === 'end';
@@ -1424,7 +1428,7 @@ async function layoutTamil(text, colW, sz, font) {
       // River penalty: max Jaccard overlap of spaces in this line vs the previous line.
       // Measures at wdthDefault and scales to colW (approximate stretch for the normal column).
       const curSpaces = tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, actualW, isLast ? actualW : colW, font.wdthDefault);
-      let riverPenalty = 0;
+      let overlapWithPrev = 0;
       const adjSpaces = prevLineSpaces[from];
       if (adjSpaces) {
         for (const a of curSpaces) {
@@ -1432,10 +1436,12 @@ async function layoutTamil(text, colW, sz, font) {
             const ov = Math.min(a.r, b.r) - Math.max(a.l, b.l);
             if (ov <= 0) continue;
             const j = ov / (a.w + b.w - ov);
-            if (j > riverPenalty) riverPenalty = j;
+            if (j > overlapWithPrev) overlapWithPrev = j;
           }
         }
       }
+      // Include the prev line's own score so a sustained river carries forward.
+      const riverPenalty = Math.max(overlapWithPrev, prevRiverScore[from]);
 
       // Badness: squared underfill normalised to colW, plus river penalty.
       const bad = isLast ? 0 : (((colW - actualW) / colW) ** 2) * 1000 + riverPenalty * RIVER_W;
@@ -1445,6 +1451,7 @@ async function layoutTamil(text, colW, sz, font) {
         dp[to] = cost;
         prev[to] = from;
         prevLineSpaces[to] = curSpaces;
+        prevRiverScore[to] = overlapWithPrev;
       }
     }
   }
@@ -1505,6 +1512,7 @@ async function layoutTamilStretchy(text, colW, sz, font) {
   dp[0] = 0;
   const prevLineSpaces = new Array(C).fill(null);
   prevLineSpaces[0] = [];
+  const prevRiverScore = new Float64Array(C);
   // Cache {v: wdthVal, w: measuredW} per lineStr to avoid repeating the binary search.
   // measuredW = measure(lineStr, wdthVal, …); for cl:null this equals colW to binary-search
   // precision, so we store colW directly to avoid a redundant measure() call.
@@ -1531,7 +1539,7 @@ async function layoutTamilStretchy(text, colW, sz, font) {
       // River penalty using actual stretched wdth for accurate space positions.
       // Last line: bad=0 so skip the expensive wdth lookup entirely.
       let curSpaces = null;
-      let riverPenalty = 0;
+      let overlapWithPrev = 0;
       if (!isLast) {
         let entry = wdthCache.get(lineStr);
         if (!entry) {
@@ -1550,11 +1558,12 @@ async function layoutTamilStretchy(text, colW, sz, font) {
               const ov = Math.min(a.r, b.r) - Math.max(a.l, b.l);
               if (ov <= 0) continue;
               const j = ov / (a.w + b.w - ov);
-              if (j > riverPenalty) riverPenalty = j;
+              if (j > overlapWithPrev) overlapWithPrev = j;
             }
           }
         }
       }
+      const riverPenalty = isLast ? 0 : Math.max(overlapWithPrev, prevRiverScore[from]);
 
       const bad = isLast ? 0 : (((colW - actualW) / colW) ** 2) * 1000 + riverPenalty * RIVER_W;
       const cost = dp[from] + bad;
@@ -1562,6 +1571,7 @@ async function layoutTamilStretchy(text, colW, sz, font) {
         dp[to] = cost;
         prev[to] = from;
         prevLineSpaces[to] = curSpaces ?? [];
+        prevRiverScore[to] = overlapWithPrev;
       }
     }
   }
