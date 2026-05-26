@@ -697,9 +697,9 @@ const ARABIC = 'في هاته الساعة من النهار حين تبدأ ا�
 const TAMIL = 'ஆடித் திங்கள் பதினெட்டாம் நாள் முன் மாலை நேரத்தில் அலை கடல் போல் விரிந்து பரந்திருந்த வீர நாராயண ஏரிக்கரை மீது ஒரு வாலிப வீரன் குதிரை ஏறிப் பிரயாணம் செய்து கொண்டிருந்தான். அவன் தமிழகத்து வீர சரித்திரத்தில் புகழ்பெற்ற வாணர் குலத்தைச் சேர்ந்தவன். வல்லவரையன் வந்தியத்தேவன். நெடுந்தூரம் பிரயாணம் செய்து அலுத்துக்களைத்திருந்த அவனுடைய குதிரை மெள்ள மெள்ள நடந்து சென்று கொண்டிருந்தது. அதைப் பற்றி அந்த இளம் வீரன் கவலைப்படவில்லை. அகண்டமான வீர நாராயண ஏரியின் தோற்றம் அவன் உள்ளத்தை அவ்வளவாக வசீகரித்திருந்தது. அத்தகைய சோழ குல மன்னர்களுடன் நட்புரிமை கொள்ளும் பேறு தனக்குக் கிடைத்திருப்பது பற்றி நினைக்க வந்தியத்தேவனுடைய தோள்கள் பூரித்தன. ஆடிப் பதினெட்டாம் பெருக்கன்று சோழநாட்டு நதிகளிலெல்லாம் வெள்ளம் இருகரையும்தொட்டுக் கொண்டு ஓடுவது வழக்கம். அந்த நதிகளிலிருந்து தண்ணீர் பெறும் ஏரிகளும் பூரணமாக நிரம்பிக் கரையின் உச்சியைத் தொட்டுக் கொண்டு அலைமோதிக் கொண்டிருப்பது வழக்கம்.';
 
 // ── Font state ────────────────────────────────────────
-let enFont = { family: 'AmstelvarFont', wdthMin: 50,  wdthMax: 125, wdthDefault: 100, wdthLo: 50,  wdthHi: 125 };
-let taFont = { family: 'KorkaiFont',   wdthMin: 100, wdthMax: 200, wdthDefault: 100, wdthLo: 100, wdthHi: 200 };
-let arFont = { family: 'EstedadFont',  wdthMin: 100, wdthMax: 200, wdthDefault: 100, wdthLo: 100, wdthHi: 200 };
+let enFont = { family: 'AmstelvarFont', axisTag: 'wdth', wdthMin: 50,  wdthMax: 125, wdthDefault: 100, wdthLo: 50,  wdthHi: 125 };
+let taFont = { family: 'KorkaiFont',   axisTag: 'wdth', wdthMin: 100, wdthMax: 200, wdthDefault: 100, wdthLo: 100, wdthHi: 200 };
+let arFont = { family: 'EstedadFont',  axisTag: 'KSHD', wdthMin: 100, wdthMax: 200, wdthDefault: 100, wdthLo: 100, wdthHi: 200 };
 let fontsReady = false;
 let highlightSpaces = true;
 let showRivers = false;
@@ -820,8 +820,10 @@ async function registerFont(family, buf, fontObj) {
   if (parseFont) {
     try {
       const parsed = parseFont(buf);
-      const ax = parsed.tables.fvar?.axes.find(a => a.tag === 'wdth');
+      const ax = parsed.tables.fvar?.axes.find(a => a.tag === fontObj.axisTag)
+               ?? parsed.tables.fvar?.axes.find(a => a.tag === 'wdth');
       if (ax) Object.assign(fontObj, {
+        axisTag: ax.tag,
         wdthMin: ax.minValue, wdthMax: ax.maxValue, wdthDefault: ax.defaultValue,
         wdthLo:  ax.minValue, wdthHi:  ax.maxValue,
       });
@@ -831,9 +833,9 @@ async function registerFont(family, buf, fontObj) {
 
 function updateFontInfo() {
   fontInfoEl.innerHTML =
-    `<strong>English</strong> &nbsp;Amstelvar &nbsp;<code>wdth ${enFont.wdthMin}–${enFont.wdthMax}</code><br>` +
-    `<strong>Tamil</strong> &nbsp;&nbsp;&nbsp;Korkai &nbsp;<code>wdth ${taFont.wdthMin}–${taFont.wdthMax}</code><br>` +
-    `<strong>Arabic</strong> &nbsp;&nbsp;Estedad &nbsp;<code>wdth ${arFont.wdthMin}–${arFont.wdthMax}</code>`;
+    `<strong>English</strong> &nbsp;Amstelvar &nbsp;<code>${enFont.axisTag} ${enFont.wdthMin}–${enFont.wdthMax}</code><br>` +
+    `<strong>Tamil</strong> &nbsp;&nbsp;&nbsp;Korkai &nbsp;<code>${taFont.axisTag} ${taFont.wdthMin}–${taFont.wdthMax}</code><br>` +
+    `<strong>Arabic</strong> &nbsp;&nbsp;Estedad &nbsp;<code>${arFont.axisTag} ${arFont.wdthMin}–${arFont.wdthMax}</code>`;
 }
 
 // ── Font upload override ──────────────────────────────
@@ -848,14 +850,14 @@ async function loadFontOverride(source) {
   let parsed;
   try { parsed = parseFont(buf); } catch { return; }
 
-  const wdthAxis = parsed.tables.fvar?.axes.find(a => a.tag === 'wdth');
-  if (!wdthAxis) {
-    fontInfoEl.innerHTML = '<span style="color:var(--err)">No <code>wdth</code> axis in this font.</span>';
-    return;
-  }
-
   const lang = detectLang(textarea.value.trim());
   const fontObj = fontFor(lang);
+  const stretchAxis = parsed.tables.fvar?.axes.find(a => a.tag === fontObj.axisTag)
+                   ?? parsed.tables.fvar?.axes.find(a => a.tag === 'wdth');
+  if (!stretchAxis) {
+    fontInfoEl.innerHTML = '<span style="color:var(--err)">No stretch axis in this font.</span>';
+    return;
+  }
   await registerFont(fontObj.family, buf, fontObj);
   fontsReady = true;
   updateFontInfo();
@@ -1084,10 +1086,10 @@ get('btn-arabic').addEventListener('click',  () => { textarea.value = ARABIC;  r
 textarea.addEventListener('input', scheduleRender);
 
 // ── Measurement ───────────────────────────────────────
-function measure(text, wdth, sz, fontFamily) {
-  ms.style.fontFamily            = `'${fontFamily}', system-ui, serif`;
+function measure(text, wdth, sz, font) {
+  ms.style.fontFamily            = `'${font.family}', system-ui, serif`;
   ms.style.fontSize              = `${sz}px`;
-  ms.style.fontVariationSettings = `'wdth' ${wdth}`;
+  ms.style.fontVariationSettings = `'${font.axisTag}' ${wdth}`;
   ms.textContent = text;
   return ms.getBoundingClientRect().width;
 }
@@ -1095,25 +1097,25 @@ function measure(text, wdth, sz, fontFamily) {
 // Try [wdthDefault, wdthHi] first; only fall back to [wdthLo, wdthDefault] when the line
 // still overflows at wdthDefault.
 function stretchyWdth(lineText, colW, sz, font) {
-  const r = findWdth(lineText, colW, sz, font.family, font.wdthDefault, font.wdthHi);
-  if (r.cl === 'min') return findWdth(lineText, colW, sz, font.family, font.wdthLo, font.wdthDefault);
+  const r = findWdth(lineText, colW, sz, font, font.wdthDefault, font.wdthHi);
+  if (r.cl === 'min') return findWdth(lineText, colW, sz, font, font.wdthLo, font.wdthDefault);
   return r;
 }
 
-function findWdth(text, target, sz, fontFamily, wdthMin, wdthMax) {
-  if (measure(text, wdthMax, sz, fontFamily) <= target) return { v: wdthMax, cl: 'max' };
-  if (measure(text, wdthMin, sz, fontFamily) >= target) return { v: wdthMin, cl: 'min' };
+function findWdth(text, target, sz, font, wdthMin, wdthMax) {
+  if (measure(text, wdthMax, sz, font) <= target) return { v: wdthMax, cl: 'max' };
+  if (measure(text, wdthMin, sz, font) >= target) return { v: wdthMin, cl: 'min' };
   let lo = wdthMin, hi = wdthMax;
   for (let i = 0; i < 20; i++) {
     const mid = (lo + hi) / 2;
-    if (measure(text, mid, sz, fontFamily) < target) lo = mid; else hi = mid;
+    if (measure(text, mid, sz, font) < target) lo = mid; else hi = mid;
   }
   return { v: (lo + hi) / 2, cl: null };
 }
 
 function naturalSpaceWidth(font, sz) {
-  return measure('a b', font.wdthDefault, sz, font.family)
-       - measure('ab',  font.wdthDefault, sz, font.family);
+  return measure('a b', font.wdthDefault, sz, font)
+       - measure('ab',  font.wdthDefault, sz, font);
 }
 
 // ── Space highlights with river detection ─────────────
@@ -1295,7 +1297,7 @@ function layoutArabic(text, colW, sz, font) {
     fontFamily:            `'${font.family}', system-ui, sans-serif`,
     fontSize:              `${sz}px`,
     lineHeight:            `${sz * 1.45}px`,
-    fontVariationSettings: `'wdth' ${font.wdthDefault}`,
+    fontVariationSettings: `'${font.axisTag}' ${font.wdthDefault}`,
     direction:             'rtl',
     wordBreak:             'normal',
     hyphens:               'none',
@@ -1338,7 +1340,7 @@ function layoutArabic(text, colW, sz, font) {
 
 // Space intervals for river detection.
 // lineStr: the line text (no SHY, trimEnd applied).
-// measuredW: measure(lineStr, wdth, sz, font.family) — precomputed by the caller.
+// measuredW: measure(lineStr, wdth, sz, font) — precomputed by the caller.
 // targetW: colW for non-last lines (stretch to fill); measuredW for last line (no CSS justify).
 // wdth: the font-variation wdth axis value at which prefixes are measured.
 //   Normal column:   wdth = font.wdthDefault  → approximate stretch via scale = colW/measuredW.
@@ -1355,7 +1357,7 @@ function tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, measuredW, ta
     if (segs[i] === SHY) continue;
     if (!segs[i].trim()) {
       const prefixW = charPos > 0
-        ? measure(lineStr.substring(0, charPos), wdth, sz, font.family)
+        ? measure(lineStr.substring(0, charPos), wdth, sz, font)
         : 0;
       const l = prefixW * scale;
       const w = totalCanvas > 0 ? wids[i] / totalCanvas * targetW : 0;
@@ -1422,7 +1424,7 @@ async function layoutTamil(text, colW, sz, font) {
       let lineStr = '';
       for (let i = f; i < t; i++) { if (segs[i] !== SHY) lineStr += segs[i]; }
       lineStr = lineStr.trimEnd();
-      const actualW = lineStr ? measure(lineStr, font.wdthDefault, sz, font.family) : 0;
+      const actualW = lineStr ? measure(lineStr, font.wdthDefault, sz, font) : 0;
       if (actualW > colW) break; // wider going left — stop inner loop
 
       // River penalty: max Jaccard overlap of spaces in this line vs the previous line.
@@ -1533,7 +1535,7 @@ async function layoutTamilStretchy(text, colW, sz, font) {
       let lineStr = '';
       for (let i = f; i < t; i++) { if (segs[i] !== SHY) lineStr += segs[i]; }
       lineStr = lineStr.trimEnd();
-      const actualW = lineStr ? measure(lineStr, font.wdthDefault, sz, font.family) : 0;
+      const actualW = lineStr ? measure(lineStr, font.wdthDefault, sz, font) : 0;
       if (actualW > colW) break;
 
       // River penalty using actual stretched wdth for accurate space positions.
@@ -1546,7 +1548,7 @@ async function layoutTamilStretchy(text, colW, sz, font) {
           const { v: wdthVal, cl } = stretchyWdth(lineStr, colW, sz, font);
           // cl:null → binary search converged; rendered width ≈ colW, no extra call needed.
           // cl:max/min → font is capped; measure the actual rendered width.
-          const measuredW = cl === null ? colW : measure(lineStr, wdthVal, sz, font.family);
+          const measuredW = cl === null ? colW : measure(lineStr, wdthVal, sz, font);
           entry = { v: wdthVal, w: measuredW };
           wdthCache.set(lineStr, entry);
         }
@@ -1657,7 +1659,7 @@ function renderRegular(text, colW, sz, lang, font, precomputedLines) {
         `font-family:'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`,
         `font-size:${sz}px`,
         `line-height:1.45`,
-        `font-variation-settings:'wdth' ${font.wdthDefault}`,
+        `font-variation-settings:'${font.axisTag}' ${font.wdthDefault}`,
         isAr ? 'direction:rtl' : '',
         `white-space:nowrap`,
         `text-align:justify`,
@@ -1682,7 +1684,7 @@ function renderRegular(text, colW, sz, lang, font, precomputedLines) {
     fontSize:              `${sz}px`,
     lineHeight:            '1.45',
     textAlign:             'justify',
-    fontVariationSettings: `'wdth' ${font.wdthDefault}`,
+    fontVariationSettings: `'${font.axisTag}' ${font.wdthDefault}`,
     hyphens:               'auto',
     wordBreak:             'normal',
     overflowWrap:          'break-word',
@@ -1725,13 +1727,13 @@ async function renderStretchy(text, colW, sz, lang, font, precomputedLines) {
       `font-family:'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`,
       `font-size:${sz}px`,
       `line-height:1.45`,
-      `font-variation-settings:'wdth' ${wdthVal}`,
+      `font-variation-settings:'${font.axisTag}' ${wdthVal}`,
       isAr ? 'direction:rtl' : '',
     ].filter(Boolean).join(';');
     el.textContent = lineText;
 
     if (cl === 'max' && !isLast) {
-      const gap = colW - measure(lineText, font.wdthHi, sz, font.family);
+      const gap = colW - measure(lineText, font.wdthHi, sz, font);
       const numSpaces = (lineText.match(/ /g) || []).length;
       if (numSpaces > 0) el.style.wordSpacing = `${(gap / numSpaces).toFixed(2)}px`;
     }

@@ -35,8 +35,8 @@ No build step. Fonts are bundled (`amstelvar.ttf`, `korkai.ttf`, `arabic.ttf`).
 
 ## Bundled fonts
 
-| Language | Font | `wdth` range |
+| Language | Font | Stretch axis |
 |---|---|---|
-| English | [Amstelvar](https://github.com/googlefonts/amstelvar) | 50–125 |
-| Tamil | [Korkai](https://github.com/tenkodu/Korkai) | 100–200 |
-| Arabic | [Estedad](https://github.com/aminabedi68/Estedad) | 100–200 |
+| English | [Amstelvar](https://github.com/googlefonts/amstelvar) | `wdth` 50–125 |
+| Tamil | [Korkai](https://github.com/tenkodu/Korkai) | `wdth` 100–200 |
+| Arabic | [Estedad v7.3](https://github.com/aminabedi68/Estedad) | `KSHD` 100–200 |
