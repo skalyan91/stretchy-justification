@@ -1677,12 +1677,14 @@ async function render() {
     normalLines   = await layoutTamil(text, colW, sz, font);
     if (renderId !== myId) return;
     stretchyLines = await layoutTamilStretchy(text, colW, sz, font);
+    if (renderId !== myId) return;
   } else if (lang === 'ar') {
     normalLines = stretchyLines = layoutArabic(text, colW, sz, font);
   }
 
   renderRegular(text, colW, sz, lang, font, normalLines);
-  await renderStretchy(text, colW, sz, lang, font, stretchyLines);
+  await renderStretchy(text, colW, sz, lang, font, stretchyLines, myId);
+  if (renderId !== myId) return;
   updateColWidthMin();
 }
 
@@ -1737,7 +1739,7 @@ function renderRegular(text, colW, sz, lang, font, precomputedLines) {
   if (highlightSpaces || showRivers) addSpaceHighlightsSingleDiv(div, naturalSpaceWidth(font, sz), sz);
 }
 
-async function renderStretchy(text, colW, sz, lang, font, precomputedLines) {
+async function renderStretchy(text, colW, sz, lang, font, precomputedLines, myId) {
   colStretchy.innerHTML = '';
 
   let lines;
@@ -1749,6 +1751,7 @@ async function renderStretchy(text, colW, sz, lang, font, precomputedLines) {
     colStretchy.innerHTML = `<p style="color:var(--err);font-size:13px">Layout error: ${err.message}</p>`;
     return;
   }
+  if (renderId !== myId) return;
 
   const isAr = lang === 'ar';
   const frag = document.createDocumentFragment();
