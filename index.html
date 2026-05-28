@@ -585,10 +585,10 @@
   </div>
   <div class="wdth-num-row" style="margin-top:6px">
     <span class="wdth-num-label">Min</span>
-    <input type="number" id="hb-wdth-lo-num">
+    <input type="number" id="hb-wdth-lo-num" step="1">
     <span class="wdth-spacer"></span>
     <span class="wdth-num-label">Max</span>
-    <input type="number" id="hb-wdth-hi-num">
+    <input type="number" id="hb-wdth-hi-num" step="1">
   </div>
 </div>
 <div class="backdrop" id="backdrop"></div>
@@ -665,10 +665,10 @@
     </div>
     <div class="wdth-num-row">
       <span class="wdth-num-label">Min</span>
-      <input type="number" id="wdth-lo-num">
+      <input type="number" id="wdth-lo-num" step="1">
       <span class="wdth-spacer"></span>
       <span class="wdth-num-label">Max</span>
-      <input type="number" id="wdth-hi-num">
+      <input type="number" id="wdth-hi-num" step="1">
     </div>
   </div>
 
@@ -978,14 +978,14 @@ wdthHiRange.addEventListener('input', () => {
 });
 wdthLoNum.addEventListener('change', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
-  font.wdthLo = Math.max(font.wdthMin, Math.min(+wdthLoNum.value, font.wdthDefault));
+  font.wdthLo = Math.max(font.wdthMin, Math.min(Math.round(+wdthLoNum.value), font.wdthDefault));
   wdthLoNum.value = font.wdthLo; wdthLoRange.value = font.wdthLo;
   hbWdthLoRange.value = font.wdthLo; hbWdthLoNum.value = font.wdthLo;
   updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
 });
 wdthHiNum.addEventListener('change', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
-  font.wdthHi = Math.min(font.wdthMax, Math.max(+wdthHiNum.value, font.wdthDefault));
+  font.wdthHi = Math.min(font.wdthMax, Math.max(Math.round(+wdthHiNum.value), font.wdthDefault));
   wdthHiNum.value = font.wdthHi; wdthHiRange.value = font.wdthHi;
   hbWdthHiRange.value = font.wdthHi; hbWdthHiNum.value = font.wdthHi;
   updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
@@ -1030,14 +1030,14 @@ hbWdthHiRange.addEventListener('input', () => {
 });
 hbWdthLoNum.addEventListener('change', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
-  font.wdthLo = Math.max(font.wdthMin, Math.min(+hbWdthLoNum.value, font.wdthDefault));
+  font.wdthLo = Math.max(font.wdthMin, Math.min(Math.round(+hbWdthLoNum.value), font.wdthDefault));
   hbWdthLoNum.value = font.wdthLo; hbWdthLoRange.value = font.wdthLo;
   wdthLoNum.value = font.wdthLo; wdthLoRange.value = font.wdthLo;
   updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
 });
 hbWdthHiNum.addEventListener('change', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
-  font.wdthHi = Math.min(font.wdthMax, Math.max(+hbWdthHiNum.value, font.wdthDefault));
+  font.wdthHi = Math.min(font.wdthMax, Math.max(Math.round(+hbWdthHiNum.value), font.wdthDefault));
   hbWdthHiNum.value = font.wdthHi; hbWdthHiRange.value = font.wdthHi;
   wdthHiNum.value = font.wdthHi; wdthHiRange.value = font.wdthHi;
   updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
@@ -1049,7 +1049,7 @@ function handleWdthTrackClick(e) {
   const font = fontFor(detectLang(textarea.value.trim()));
   const rect = e.currentTarget.getBoundingClientRect();
   const frac = Math.max(0, Math.min(1, (e.clientX - rect.left - 7) / (rect.width - 14)));
-  const val  = font.wdthMin + frac * (font.wdthMax - font.wdthMin);
+  const val  = Math.round(font.wdthMin + frac * (font.wdthMax - font.wdthMin));
   if (Math.abs(val - font.wdthLo) <= Math.abs(val - font.wdthHi)) {
     font.wdthLo = Math.max(font.wdthMin, Math.min(val, font.wdthDefault));
   } else {
