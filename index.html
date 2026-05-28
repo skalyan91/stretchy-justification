@@ -967,28 +967,28 @@ wdthLoRange.addEventListener('input', () => {
   font.wdthLo = Math.min(+wdthLoRange.value, font.wdthDefault);
   wdthLoRange.value = font.wdthLo; wdthLoNum.value = font.wdthLo;
   hbWdthLoRange.value = font.wdthLo; hbWdthLoNum.value = font.wdthLo;
-  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
+  updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 });
 wdthHiRange.addEventListener('input', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
   font.wdthHi = Math.max(+wdthHiRange.value, font.wdthDefault);
   wdthHiRange.value = font.wdthHi; wdthHiNum.value = font.wdthHi;
   hbWdthHiRange.value = font.wdthHi; hbWdthHiNum.value = font.wdthHi;
-  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
+  updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 });
 wdthLoNum.addEventListener('change', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
   font.wdthLo = Math.max(font.wdthMin, Math.min(Math.round(+wdthLoNum.value), font.wdthDefault));
   wdthLoNum.value = font.wdthLo; wdthLoRange.value = font.wdthLo;
   hbWdthLoRange.value = font.wdthLo; hbWdthLoNum.value = font.wdthLo;
-  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
+  updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 });
 wdthHiNum.addEventListener('change', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
   font.wdthHi = Math.min(font.wdthMax, Math.max(Math.round(+wdthHiNum.value), font.wdthDefault));
   wdthHiNum.value = font.wdthHi; wdthHiRange.value = font.wdthHi;
   hbWdthHiRange.value = font.wdthHi; hbWdthHiNum.value = font.wdthHi;
-  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
+  updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 });
 
 // ── Bar control event listeners ──────────────────────
@@ -1019,28 +1019,28 @@ hbWdthLoRange.addEventListener('input', () => {
   font.wdthLo = Math.min(+hbWdthLoRange.value, font.wdthDefault);
   hbWdthLoRange.value = font.wdthLo; hbWdthLoNum.value = font.wdthLo;
   wdthLoRange.value = font.wdthLo; wdthLoNum.value = font.wdthLo;
-  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
+  updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 });
 hbWdthHiRange.addEventListener('input', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
   font.wdthHi = Math.max(+hbWdthHiRange.value, font.wdthDefault);
   hbWdthHiRange.value = font.wdthHi; hbWdthHiNum.value = font.wdthHi;
   wdthHiRange.value = font.wdthHi; wdthHiNum.value = font.wdthHi;
-  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
+  updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 });
 hbWdthLoNum.addEventListener('change', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
   font.wdthLo = Math.max(font.wdthMin, Math.min(Math.round(+hbWdthLoNum.value), font.wdthDefault));
   hbWdthLoNum.value = font.wdthLo; hbWdthLoRange.value = font.wdthLo;
   wdthLoNum.value = font.wdthLo; wdthLoRange.value = font.wdthLo;
-  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
+  updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 });
 hbWdthHiNum.addEventListener('change', () => {
   const font = fontFor(detectLang(textarea.value.trim()));
   font.wdthHi = Math.min(font.wdthMax, Math.max(Math.round(+hbWdthHiNum.value), font.wdthDefault));
   hbWdthHiNum.value = font.wdthHi; hbWdthHiRange.value = font.wdthHi;
   wdthHiNum.value = font.wdthHi; wdthHiRange.value = font.wdthHi;
-  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
+  updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 });
 
 // Allow clicking on the track to set the nearest endpoint
@@ -1059,7 +1059,7 @@ function handleWdthTrackClick(e) {
   wdthHiRange.value = font.wdthHi; wdthHiNum.value = font.wdthHi;
   hbWdthLoRange.value = font.wdthLo; hbWdthLoNum.value = font.wdthLo;
   hbWdthHiRange.value = font.wdthHi; hbWdthHiNum.value = font.wdthHi;
-  updateWdthFill(font); updateHbWdthFill(font); scheduleRender();
+  updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 }
 document.querySelector('#sidebar-wdth .range-dual-wrap').addEventListener('click', handleWdthTrackClick);
 document.querySelector('#wdth-drawer .range-dual-wrap').addEventListener('click', handleWdthTrackClick);
@@ -1663,6 +1663,10 @@ async function layoutTamilStretchy(text, colW, sz, font) {
 function scheduleRender() {
   clearTimeout(renderTimer);
   renderTimer = setTimeout(render, 60);
+}
+function scheduleWdthRender() {
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(render, 300);
 }
 
 async function render() {
