@@ -572,6 +572,10 @@
       <input type="checkbox" id="hb-rivers-cb">
       Rivers
     </label>
+    <label class="bar-check-label">
+      <input type="checkbox" id="hb-french-cb">
+      French
+    </label>
     <button class="bar-drawer-btn" id="wdth-drawer-btn" aria-expanded="false">wdth ▾</button>
   </div>
 </div>
@@ -653,6 +657,10 @@
       <input type="checkbox" id="rivers-cb">
       Rivers
     </label>
+    <label class="check-row">
+      <input type="checkbox" id="french-cb">
+      French spacing
+    </label>
   </div>
 
   <div class="s-section" id="sidebar-wdth">
@@ -730,6 +738,7 @@ let arFont = { family: 'EstedadFont',  axisTag: 'KSHD', wdthMin: 100, wdthMax: 2
 let fontsReady = false;
 let highlightSpaces = true;
 let showRivers = false;
+let frenchSpacing = false;
 let colWidthInitialized = false; // snaps to min once after each text/font change
 
 let renderTimer = null, renderId = 0;
@@ -761,6 +770,7 @@ const ms            = get('ms');
 const comparisonEl  = document.querySelector('.comparison');
 const highlightCb   = get('highlight-cb');
 const riversCb      = get('rivers-cb');
+const frenchCb      = get('french-cb');
 const wdthLoRange   = get('wdth-lo-range');
 const wdthHiRange   = get('wdth-hi-range');
 const wdthLoNum     = get('wdth-lo-num');
@@ -771,6 +781,7 @@ const wdthFillEl    = get('wdth-fill');
 const hbFsNum       = get('hb-fs-num');
 const hbHighlightCb = get('hb-highlight-cb');
 const hbRiversCb    = get('hb-rivers-cb');
+const hbFrenchCb    = get('hb-french-cb');
 const wdthDrawerBtn = get('wdth-drawer-btn');
 const wdthDrawerEl  = get('wdth-drawer');
 const hbWdthLoRange = get('hb-wdth-lo-range');
@@ -923,6 +934,16 @@ riversCb.addEventListener('change', () => {
   showRivers = riversCb.checked;
   hbRiversCb.checked = showRivers;
   if (showRivers && highlightSpaces) { highlightSpaces = false; highlightCb.checked = false; hbHighlightCb.checked = false; }
+  scheduleRender();
+});
+frenchCb.addEventListener('change', () => {
+  frenchSpacing = frenchCb.checked;
+  hbFrenchCb.checked = frenchSpacing;
+  scheduleRender();
+});
+hbFrenchCb.addEventListener('change', () => {
+  frenchSpacing = hbFrenchCb.checked;
+  frenchCb.checked = frenchSpacing;
   scheduleRender();
 });
 
@@ -1170,9 +1191,84 @@ function findWdth(text, target, sz, font, wdthMin, wdthMax) {
   return { v: (lo + hi) / 2, cl: null };
 }
 
+function naturalSpaceWidthAt(wdth, sz, font) {
+  return measure('a b', wdth, sz, font) - measure('ab', wdth, sz, font);
+}
+
 function naturalSpaceWidth(font, sz) {
-  return measure('a b', font.wdthDefault, sz, font)
-       - measure('ab',  font.wdthDefault, sz, font);
+  return naturalSpaceWidthAt(font.wdthDefault, sz, font);
+}
+
+// True if a word (the segment immediately before a space) ends a sentence.
+function wordEndsSentence(word) {
+  for (let j = word.length - 1; j >= 0; j--) {
+    const ch = word[j];
+    if (isSentenceEndingChar(ch)) return true;
+    if (ch === '"' || ch === '”' || ch === "'" || ch === '’' || ch === ')' || ch === ']') continue;
+    break;
+  }
+  return false;
+}
+
+// Build el's content as alternating text nodes and explicit-width <span class="sp"> elements
+// so that sentence-ending spaces are exactly 2× the width of word spaces.
+// wdth: the font-variation wdth axis value the element is rendered at.
+function setLineContent(el, lineText, colW, font, sz, wdth, isLast) {
+  const parts = lineText.split(' ');
+  const nSpaces = parts.length - 1;
+
+  if (nSpaces === 0) {
+    el.textContent = lineText;
+    return;
+  }
+
+  const isSent = parts.slice(0, -1).map(w => !frenchSpacing && wordEndsSentence(w));
+  const nSentSpaces = isSent.filter(Boolean).length;
+  const nWordSpaces = nSpaces - nSentSpaces;
+  const naturalSpW = naturalSpaceWidthAt(wdth, sz, font);
+
+  let wordSpW, sentSpW;
+  if (isLast) {
+    wordSpW = naturalSpW;
+    sentSpW = 2 * naturalSpW;
+  } else {
+    const measuredW = measure(lineText, wdth, sz, font);
+    const nonSpaceW = measuredW - nSpaces * naturalSpW;
+    const denom = nWordSpaces + 2 * nSentSpaces;
+    wordSpW = Math.max(0, (colW - nonSpaceW) / denom);
+    sentSpW = 2 * wordSpW;
+  }
+
+  el.textContent = '';
+  const frag = document.createDocumentFragment();
+  for (let k = 0; k < parts.length; k++) {
+    if (parts[k]) frag.appendChild(document.createTextNode(parts[k]));
+    if (k < nSpaces) {
+      const sp = document.createElement('span');
+      sp.className = 'sp';
+      if (isSent[k]) sp.dataset.sentence = '1';
+      sp.style.cssText = `display:inline-block;vertical-align:top;width:${(isSent[k] ? sentSpW : wordSpW).toFixed(3)}px`;
+      sp.appendChild(document.createTextNode(' '));
+      frag.appendChild(sp);
+    }
+  }
+  el.appendChild(frag);
+}
+
+function isSentenceEndingChar(ch) {
+  return ch === '.' || ch === '?' || ch === '!';
+}
+
+// True if the space at index i in text follows a sentence-ending character
+// (possibly with closing quotes/parentheses in between).
+function isSentenceSpace(text, i) {
+  for (let j = i - 1; j >= 0; j--) {
+    const ch = text[j];
+    if (isSentenceEndingChar(ch)) return true;
+    if (ch === '"' || ch === "'" || ch === '’' || ch === '”' || ch === ')' || ch === ']') continue;
+    break;
+  }
+  return false;
 }
 
 // ── Space highlights with river detection ─────────────
@@ -1180,10 +1276,24 @@ function naturalSpaceWidth(font, sz) {
 
 function collectLineSpaces(el) {
   el.style.position = 'relative';
+  const elRect = el.getBoundingClientRect();
+  // Lines built by setLineContent have explicit .sp spans — read positions directly.
+  const spaceSpans = el.querySelectorAll('.sp');
+  if (spaceSpans.length) {
+    return Array.from(spaceSpans).map(span => {
+      const r = span.getBoundingClientRect();
+      return {
+        el, left: r.left, right: r.right, top: r.top, width: r.width,
+        relLeft: r.left - elRect.left, relTop: r.top - elRect.top,
+        sentence: !!span.dataset.sentence,
+      };
+    });
+  }
+  // Fallback: text-node scan for lines without explicit span widths
+  // (English regular column, which uses the browser's native justification).
   const node = el.firstChild;
   if (!node || node.nodeType !== Node.TEXT_NODE) return [];
   const text = node.textContent;
-  const elRect = el.getBoundingClientRect();
   const spaces = [];
   for (let i = 0; i < text.length; i++) {
     if (text[i] !== ' ') continue;
@@ -1196,6 +1306,7 @@ function collectLineSpaces(el) {
     spaces.push({
       el, left: r.left, right: r.right, top: r.top, width: r.width,
       relLeft: r.left - elRect.left, relTop: r.top - elRect.top,
+      sentence: isSentenceSpace(text, i),
     });
   }
   return spaces;
@@ -1205,14 +1316,15 @@ function renderSpaceHighlights(spacesByLine, lineH, naturalSpW) {
   if (naturalSpW <= 0) return;
   for (const line of spacesByLine) {
     for (const sp of line) {
-      const deviation = sp.width - naturalSpW;
+      const targetSpW = sp.sentence ? 2 * naturalSpW : naturalSpW;
+      const deviation = sp.width - targetSpW;
       let rgba;
       if (deviation > 0) {
-        const alpha = deviation / sp.width;   // (space − normal) / space
+        const alpha = deviation / sp.width;    // (space − target) / space
         if (alpha < 0.01) continue;
         rgba = `rgba(180,60,60,${alpha.toFixed(3)})`;
       } else {
-        const alpha = -deviation / naturalSpW; // (normal − space) / normal
+        const alpha = -deviation / targetSpW;  // (target − space) / target
         if (alpha < 0.01) continue;
         rgba = `rgba(60,60,180,${alpha.toFixed(3)})`;
       }
@@ -1279,6 +1391,7 @@ function addSpaceHighlightsSingleDiv(div, naturalSpW, sz) {
     allSpaces.push({
       el: div, left: r.left, right: r.right, top: r.top, width: r.width,
       relLeft: r.left - divRect.left, relTop: r.top - divRect.top,
+      sentence: isSentenceSpace(text, i),
     });
   }
   const lines = [];
@@ -1301,6 +1414,23 @@ async function insertSoftHyphens(text) {
 async function layoutEnglish(text, colW, sz, font) {
   const hyphenated = await insertSoftHyphens(text);
   const prep = prepareWithSegments(hyphenated, `${sz}px '${font.family}'`);
+  // Double the canvas width of sentence-ending spaces so layoutWithLines chooses
+  // break points that account for the wider inter-sentence gaps.
+  if (!frenchSpacing) {
+    const SHY = '­';
+    let lastNonShy = null;
+    for (let i = 0; i < prep.segments.length; i++) {
+      const seg = prep.segments[i];
+      if (seg === SHY) continue;
+      if (!seg.trim()) {
+        if (lastNonShy && isSentenceEndingChar(lastNonShy[lastNonShy.length - 1]))
+          prep.widths[i] *= 2;
+        lastNonShy = null;
+      } else {
+        lastNonShy = seg;
+      }
+    }
+  }
   const { lines } = layoutWithLines(prep, colW, sz * 1.45);
   return lines.map(l => (l.text || '').trimEnd()).filter(Boolean);
 }
@@ -1396,18 +1526,27 @@ function layoutArabic(text, colW, sz, font) {
 }
 
 // Space intervals for river detection.
-// lineStr: the line text (no SHY, trimEnd applied).
-// measuredW: measure(lineStr, wdth, sz, font) — precomputed by the caller.
-// targetW: colW for non-last lines (stretch to fill); measuredW for last line (no CSS justify).
-// wdth: the font-variation wdth axis value at which prefixes are measured.
-//   Normal column:   wdth = font.wdthDefault  → approximate stretch via scale = colW/measuredW.
-//   Stretchy column: wdth = actual wdthVal     → prefixes already at the rendered width; scale ≈ 1.
-// Canvas wids[] are used only for the space glyph width, where sub-pixel precision is unimportant.
-function tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, measuredW, targetW, wdth) {
+// naturalSpW: natural space width at wdth (passed by caller to avoid recomputing).
+// sentenceSpaceSet: Set of segment indices that are sentence-ending spaces.
+// Sentence spaces are assigned 2× the width of word spaces so positions match
+// what setLineContent renders.
+function tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, measuredW, targetW, wdth, sentenceSpaceSet, naturalSpW) {
   if (!lineStr || measuredW <= 0) return [];
   const scale = targetW / measuredW;
-  let totalCanvas = 0;
-  for (let i = f; i < t; i++) if (segs[i] !== SHY) totalCanvas += wids[i];
+
+  let nSpaces = 0, nSentSpaces = 0;
+  for (let i = f; i < t; i++) {
+    if (segs[i] === SHY || segs[i].trim()) continue;
+    nSpaces++;
+    if (sentenceSpaceSet && sentenceSpaceSet.has(i)) nSentSpaces++;
+  }
+
+  // Distribute targetW over words + spaces with sentence spaces = 2× word spaces.
+  const nonSpaceW = measuredW - nSpaces * naturalSpW;
+  const denom = nSpaces + nSentSpaces; // = nWordSpaces*1 + nSentSpaces*2
+  const wordSpW = denom > 0 ? (targetW - nonSpaceW) / denom : naturalSpW * scale;
+  const sentSpW = 2 * wordSpW;
+
   const spaces = [];
   let charPos = 0;
   for (let i = f; i < t; i++) {
@@ -1417,7 +1556,8 @@ function tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, measuredW, ta
         ? measure(lineStr.substring(0, charPos), wdth, sz, font)
         : 0;
       const l = prefixW * scale;
-      const w = totalCanvas > 0 ? wids[i] / totalCanvas * targetW : 0;
+      const isSent = !!(sentenceSpaceSet && sentenceSpaceSet.has(i));
+      const w = isSent ? sentSpW : wordSpW;
       spaces.push({ l, r: l + w, w });
     }
     charPos += segs[i].length;
@@ -1440,6 +1580,7 @@ async function layoutTamil(text, colW, sz, font) {
   const wids  = prepared.widths;
   const N     = segs.length;
   const RIVER_W = 200; // river penalty weight relative to underfill badness (max 1000)
+  const naturalSpW = naturalSpaceWidth(font, sz);
 
   // Break candidates: {seg, kind} where seg is the segment index to START
   // the next line at.  'start'=paragraph start, 'space'=after a space,
@@ -1450,6 +1591,21 @@ async function layoutTamil(text, colW, sz, font) {
     if (!segs[i].trim() && i + 1 < N)  { cands.push({ seg: i + 1, kind: 'space' }); }
   }
   cands.push({ seg: N, kind: 'end' });
+
+  // Pre-compute which space segments are sentence-ending (follow '.', '?', or '!').
+  const sentenceSpaceSet = new Set();
+  if (!frenchSpacing) {
+    let lastNonShy = null;
+    for (let i = 0; i < N; i++) {
+      if (segs[i] === SHY) continue;
+      if (!segs[i].trim()) {
+        if (lastNonShy && isSentenceEndingChar(lastNonShy[lastNonShy.length - 1]))
+          sentenceSpaceSet.add(i);
+      } else {
+        lastNonShy = segs[i];
+      }
+    }
+  }
 
   const C  = cands.length;
   const dp        = new Float64Array(C).fill(Infinity);
@@ -1482,11 +1638,18 @@ async function layoutTamil(text, colW, sz, font) {
       for (let i = f; i < t; i++) { if (segs[i] !== SHY) lineStr += segs[i]; }
       lineStr = lineStr.trimEnd();
       const actualW = lineStr ? measure(lineStr, font.wdthDefault, sz, font) : 0;
-      if (actualW > colW) break; // wider going left — stop inner loop
+
+      // Count sentence spaces and compute the effective line width (sentence spaces
+      // counted at 2× natural width) before the feasibility break so the break
+      // condition accounts for sentence spacing, not just raw text width.
+      let nSentSpaces = 0;
+      for (let i = f; i < t; i++) { if (sentenceSpaceSet.has(i)) nSentSpaces++; }
+      const effectiveW = actualW + nSentSpaces * naturalSpW;
+      if (effectiveW > colW) break; // wider going left — stop inner loop
 
       // River penalty: max Jaccard overlap of spaces in this line vs the previous line.
       // Measures at wdthDefault and scales to colW (approximate stretch for the normal column).
-      const curSpaces = tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, actualW, isLast ? actualW : colW, font.wdthDefault);
+      const curSpaces = tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, actualW, isLast ? actualW : colW, font.wdthDefault, sentenceSpaceSet, naturalSpW);
       let overlapWithPrev = 0;
       const adjSpaces = prevLineSpaces[from];
       if (adjSpaces) {
@@ -1503,7 +1666,7 @@ async function layoutTamil(text, colW, sz, font) {
       const riverPenalty = Math.max(overlapWithPrev, prevRiverScore[from]);
 
       // Badness: squared underfill normalised to colW, plus river penalty.
-      const bad = isLast ? 0 : (((colW - actualW) / colW) ** 2) * 1000 + riverPenalty * RIVER_W;
+      const bad = isLast ? 0 : (((colW - effectiveW) / colW) ** 2) * 1000 + riverPenalty * RIVER_W;
 
       const cost = dp[from] + bad;
       if (cost < dp[to]) {
@@ -1557,6 +1720,7 @@ async function layoutTamilStretchy(text, colW, sz, font) {
   const wids  = prepared.widths;
   const N     = segs.length;
   const RIVER_W = 200;
+  const naturalSpW = naturalSpaceWidth(font, sz);
 
   const cands = [{ seg: 0, kind: 'start' }];
   for (let i = 0; i < N; i++) {
@@ -1564,6 +1728,20 @@ async function layoutTamilStretchy(text, colW, sz, font) {
     if (!segs[i].trim() && i + 1 < N)  { cands.push({ seg: i + 1, kind: 'space' }); }
   }
   cands.push({ seg: N, kind: 'end' });
+
+  const sentenceSpaceSet = new Set();
+  if (!frenchSpacing) {
+    let lastNonShy = null;
+    for (let i = 0; i < N; i++) {
+      if (segs[i] === SHY) continue;
+      if (!segs[i].trim()) {
+        if (lastNonShy && isSentenceEndingChar(lastNonShy[lastNonShy.length - 1]))
+          sentenceSpaceSet.add(i);
+      } else {
+        lastNonShy = segs[i];
+      }
+    }
+  }
 
   const C  = cands.length;
   const dp        = new Float64Array(C).fill(Infinity);
@@ -1593,23 +1771,32 @@ async function layoutTamilStretchy(text, colW, sz, font) {
       for (let i = f; i < t; i++) { if (segs[i] !== SHY) lineStr += segs[i]; }
       lineStr = lineStr.trimEnd();
       const actualW = lineStr ? measure(lineStr, font.wdthDefault, sz, font) : 0;
-      if (actualW > colW) break;
+
+      // Compute effective width (sentence spaces at 2×) before the feasibility break.
+      let nSentSpaces = 0;
+      for (let i = f; i < t; i++) { if (sentenceSpaceSet.has(i)) nSentSpaces++; }
+      const effectiveW = actualW + nSentSpaces * naturalSpW;
+      if (effectiveW > colW) break;
 
       // River penalty using actual stretched wdth for accurate space positions.
+      // The wdth target is reduced by the extra sentence-space width so font stretching
+      // accounts for sentence spacing, not just overall line width.
       // Last line: bad=0 so skip the expensive wdth lookup entirely.
       let curSpaces = null;
       let overlapWithPrev = 0;
       if (!isLast) {
         let entry = wdthCache.get(lineStr);
         if (!entry) {
-          const { v: wdthVal, cl } = stretchyWdth(lineStr, colW, sz, font);
+          const wdthTarget = colW - nSentSpaces * naturalSpW;
+          const { v: wdthVal, cl } = stretchyWdth(lineStr, wdthTarget, sz, font);
           // cl:null → binary search converged; rendered width ≈ colW, no extra call needed.
           // cl:max/min → font is capped; measure the actual rendered width.
           const measuredW = cl === null ? colW : measure(lineStr, wdthVal, sz, font);
-          entry = { v: wdthVal, w: measuredW };
+          const spW = naturalSpaceWidthAt(wdthVal, sz, font);
+          entry = { v: wdthVal, w: measuredW, spW };
           wdthCache.set(lineStr, entry);
         }
-        curSpaces = tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, entry.w, colW, entry.v);
+        curSpaces = tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, entry.w, colW, entry.v, sentenceSpaceSet, entry.spW);
         const adjSpaces = prevLineSpaces[from];
         if (adjSpaces) {
           for (const a of curSpaces) {
@@ -1624,7 +1811,7 @@ async function layoutTamilStretchy(text, colW, sz, font) {
       }
       const riverPenalty = isLast ? 0 : Math.max(overlapWithPrev, prevRiverScore[from]);
 
-      const bad = isLast ? 0 : (((colW - actualW) / colW) ** 2) * 1000 + riverPenalty * RIVER_W;
+      const bad = isLast ? 0 : (((colW - effectiveW) / colW) ** 2) * 1000 + riverPenalty * RIVER_W;
       const cost = dp[from] + bad;
       if (cost < dp[to]) {
         dp[to] = cost;
@@ -1689,7 +1876,7 @@ async function render() {
   colStretchy.style.width = `${colW}px`;
 
   // Tamil uses separate DPs for the two columns so each can apply the correct
-  // font-stretch model for its river penalty.  Arabic is the same in both.
+  // font-stretch model for its river penalty.  Arabic and English share lines.
   let normalLines = null, stretchyLines = null;
   if (lang === 'ta') {
     normalLines   = await layoutTamil(text, colW, sz, font);
@@ -1698,6 +1885,9 @@ async function render() {
     if (renderId !== myId) return;
   } else if (lang === 'ar') {
     normalLines = stretchyLines = layoutArabic(text, colW, sz, font);
+  } else if (lang === 'en') {
+    normalLines = stretchyLines = await layoutEnglish(text, colW, sz, font);
+    if (renderId !== myId) return;
   }
 
   renderRegular(text, colW, sz, lang, font, normalLines);
@@ -1709,52 +1899,30 @@ async function render() {
 function renderRegular(text, colW, sz, lang, font, precomputedLines) {
   colRegular.innerHTML = '';
 
-  if (lang === 'ta' || lang === 'ar') {
-    const isAr = lang === 'ar';
-    const lines = precomputedLines;
-    const frag = document.createDocumentFragment();
-    for (let i = 0; i < lines.length; i++) {
-      if (!lines[i]) continue;
-      const el = document.createElement('div');
-      el.setAttribute('lang', lang);
-      const isLast = i === lines.length - 1;
-      el.style.cssText = [
-        `font-family:'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`,
-        `font-size:${sz}px`,
-        `line-height:1.45`,
-        `font-variation-settings:${fontVarSettings(font, font.wdthDefault, sz)}`,
-        isAr ? 'direction:rtl' : '',
-        `white-space:nowrap`,
-        `text-align:justify`,
-        // RTL last line aligns to the right (natural start); LTR last line to the left.
-        `text-align-last:${isLast ? (isAr ? 'right' : 'left') : 'justify'}`,
-      ].filter(Boolean).join(';');
-      el.textContent = lines[i];
-      frag.appendChild(el);
-    }
-    colRegular.appendChild(frag);
-    if (highlightSpaces || showRivers) {
-      const naturalSpW = naturalSpaceWidth(font, sz);
-      addSpaceHighlightsForLines(Array.from(colRegular.querySelectorAll('[lang]')), naturalSpW, sz);
-    }
-    return;
+  const isAr = lang === 'ar';
+  const lines = precomputedLines;
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i]) continue;
+    const el = document.createElement('div');
+    el.setAttribute('lang', lang);
+    const isLast = i === lines.length - 1;
+    el.style.cssText = [
+      `font-family:'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`,
+      `font-size:${sz}px`,
+      `line-height:1.45`,
+      `font-variation-settings:${fontVarSettings(font, font.wdthDefault, sz)}`,
+      isAr ? 'direction:rtl' : '',
+      `white-space:nowrap`,
+    ].filter(Boolean).join(';');
+    setLineContent(el, lines[i], colW, font, sz, font.wdthDefault, isLast);
+    frag.appendChild(el);
   }
-
-  const div = document.createElement('div');
-  div.setAttribute('lang', lang);
-  Object.assign(div.style, {
-    fontFamily:            `'${font.family}', system-ui, serif`,
-    fontSize:              `${sz}px`,
-    lineHeight:            '1.45',
-    textAlign:             'justify',
-    fontVariationSettings: fontVarSettings(font, font.wdthDefault, sz),
-    hyphens:               'auto',
-    wordBreak:             'normal',
-    overflowWrap:          'break-word',
-  });
-  div.textContent = text;
-  colRegular.appendChild(div);
-  if (highlightSpaces || showRivers) addSpaceHighlightsSingleDiv(div, naturalSpaceWidth(font, sz), sz);
+  colRegular.appendChild(frag);
+  if (highlightSpaces || showRivers) {
+    const naturalSpW = naturalSpaceWidth(font, sz);
+    addSpaceHighlightsForLines(Array.from(colRegular.querySelectorAll('[lang]')), naturalSpW, sz);
+  }
 }
 
 async function renderStretchy(text, colW, sz, lang, font, precomputedLines, myId) {
@@ -1762,9 +1930,7 @@ async function renderStretchy(text, colW, sz, lang, font, precomputedLines, myId
 
   let lines;
   try {
-    lines = lang === 'en'
-      ? await layoutEnglish(text, colW, sz, font)
-      : precomputedLines;
+    lines = precomputedLines ?? await layoutEnglish(text, colW, sz, font);
   } catch (err) {
     colStretchy.innerHTML = `<p style="color:var(--err);font-size:13px">Layout error: ${err.message}</p>`;
     return;
@@ -1780,7 +1946,14 @@ async function renderStretchy(text, colW, sz, lang, font, precomputedLines, myId
 
     const isLast = (i === lines.length - 1);
     let wdthVal = font.wdthDefault, cl = null;
-    if (!isLast) ({ v: wdthVal, cl } = stretchyWdth(lineText, colW, sz, font));
+    if (!isLast) {
+      // Reduce the wdth target by the extra width that sentence spaces will contribute,
+      // so font-width finding treats sentence spacing as part of the line budget.
+      const nSentW = frenchSpacing ? 0
+        : lineText.split(' ').slice(0, -1).filter(wordEndsSentence).length
+          * naturalSpaceWidth(font, sz);
+      ({ v: wdthVal, cl } = stretchyWdth(lineText, colW - nSentW, sz, font));
+    }
 
     const wrapper = document.createElement('div');
     wrapper.className = isAr ? 'lw rtl' : 'lw';
@@ -1793,22 +1966,9 @@ async function renderStretchy(text, colW, sz, lang, font, precomputedLines, myId
       `line-height:1.45`,
       `font-variation-settings:${fontVarSettings(font, wdthVal, sz)}`,
       isAr ? 'direction:rtl' : '',
+      `white-space:nowrap`,
     ].filter(Boolean).join(';');
-    el.textContent = lineText;
-
-    if (cl === 'max' && !isLast) {
-      const numSpaces = (lineText.match(/ /g) || []).length;
-      if (numSpaces > 0) {
-        // Use CSS justification instead of word-spacing: iOS Safari's Range API
-        // does not include explicit word-spacing in getClientRects() widths, so
-        // space highlights would show nothing for these lines with word-spacing.
-        // CSS justification (which the Regular column also uses) is measured correctly.
-        el.style.whiteSpace    = 'normal';
-        el.style.width         = `${colW}px`;
-        el.style.textAlign     = 'justify';
-        el.style.textAlignLast = 'justify';
-      }
-    }
+    setLineContent(el, lineText, colW, font, sz, wdthVal, isLast);
 
     const annot = document.createElement('span');
     annot.className = 'annot' + (cl ? ' cl' : '');
