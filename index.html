@@ -840,6 +840,7 @@ async function loadBundledFonts() {
     ]);
     fontsReady = true;
     updateFontInfo();
+    applySavedSession();
     scheduleRender();
   } catch (e) {
     fontInfoEl.innerHTML = '<span style="color:var(--err)">Font load failed. Upload a font to continue.</span>';
@@ -1846,12 +1847,47 @@ async function layoutTamilStretchy(text, colW, sz, font) {
   return lines.filter(Boolean);
 }
 
+// ── Session persistence ───────────────────────────────
+const SESSION_KEY = 'pretext-session';
+let _savedSession = null;
+try { _savedSession = JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch {}
+
+function saveSession() {
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+    text:      textarea.value,
+    fs:        +fsRange.value,
+    cw:        +cwRange.value,
+    highlight: highlightCb.checked,
+    rivers:    riversCb.checked,
+    french:    frenchCb.checked,
+    enWdthLo:  enFont.wdthLo, enWdthHi: enFont.wdthHi,
+    taWdthLo:  taFont.wdthLo, taWdthHi: taFont.wdthHi,
+    arWdthLo:  arFont.wdthLo, arWdthHi: arFont.wdthHi,
+  }));
+}
+
+// Called after registerFont() runs (which resets wdthLo/Hi to axis defaults).
+function applySavedSession() {
+  const s = _savedSession;
+  if (!s) return;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
+  if (s.enWdthLo != null) enFont.wdthLo = clamp(s.enWdthLo, enFont.wdthMin, enFont.wdthDefault);
+  if (s.enWdthHi != null) enFont.wdthHi = clamp(s.enWdthHi, enFont.wdthDefault, enFont.wdthMax);
+  if (s.taWdthLo != null) taFont.wdthLo = clamp(s.taWdthLo, taFont.wdthMin, taFont.wdthDefault);
+  if (s.taWdthHi != null) taFont.wdthHi = clamp(s.taWdthHi, taFont.wdthDefault, taFont.wdthMax);
+  if (s.arWdthLo != null) arFont.wdthLo = clamp(s.arWdthLo, arFont.wdthMin, arFont.wdthDefault);
+  if (s.arWdthHi != null) arFont.wdthHi = clamp(s.arWdthHi, arFont.wdthDefault, arFont.wdthMax);
+  updateWdthUI(fontFor(detectLang(textarea.value.trim())));
+}
+
 // ── Render ────────────────────────────────────────────
 function scheduleRender() {
+  saveSession();
   clearTimeout(renderTimer);
   renderTimer = setTimeout(render, 60);
 }
 function scheduleWdthRender() {
+  saveSession();
   clearTimeout(renderTimer);
   renderTimer = setTimeout(render, 300);
 }
@@ -1994,7 +2030,20 @@ function showPH(msg) {
 }
 
 // ── Init ──────────────────────────────────────────────
-textarea.value = ENGLISH;
+if (_savedSession) {
+  textarea.value = _savedSession.text ?? ENGLISH;
+  if (_savedSession.fs)  { fsRange.value = _savedSession.fs;  fsNum.value = _savedSession.fs;  hbFsNum.value = _savedSession.fs; }
+  highlightSpaces        = !!_savedSession.highlight;
+  highlightCb.checked    = hbHighlightCb.checked = highlightSpaces;
+  showRivers             = !!_savedSession.rivers;
+  riversCb.checked       = hbRiversCb.checked    = showRivers;
+  frenchSpacing          = !!_savedSession.french;
+  frenchCb.checked       = hbFrenchCb.checked     = frenchSpacing;
+  // Restore column width; skip the initial snap-to-min on first render
+  if (_savedSession.cw)  { cwRange.value = _savedSession.cw;  cwNum.value = _savedSession.cw;  colWidthInitialized = true; }
+} else {
+  textarea.value = ENGLISH;
+}
 loadBundledFonts();
 </script>
 </body>
