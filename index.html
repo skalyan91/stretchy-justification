@@ -954,7 +954,14 @@ function enterEditMode() {
 }
 colRegular.addEventListener('mousedown', enterEditMode);
 colRegular.addEventListener('touchstart', enterEditMode, { passive: true });
-colRegular.addEventListener('focus', enterEditMode);
+colRegular.addEventListener('focus', () => {
+  enterEditMode();
+  // Recompute the live space annotations immediately on entering edit mode
+  // (now that the element is focused, renderRegular keeps plain-text mode and
+  // overlays the annotations) rather than waiting for the first keystroke.
+  clearTimeout(renderTimer);
+  render();
+});
 
 colRegular.addEventListener('blur', () => {
   sourceText = readEditingDOM();
@@ -1549,29 +1556,45 @@ function addSpaceHighlightsForLines(lineEls, naturalSpW, sz) {
   else renderSpaceHighlights(spacesByLine, sz * 1.45, naturalSpW);
 }
 
-// Single div with many visual lines: for the English regular panel.
+// Single div with many visually-wrapped lines: used for the editable Regular
+// column while it is being typed (plain text, native CSS justification).
+// Scans every descendant text node (skipping .space-annot overlays) so it is
+// robust to the browser splitting the editable text into multiple nodes.
 function addSpaceHighlightsSingleDiv(div, naturalSpW, sz) {
   div.style.position = 'relative';
-  const node = div.firstChild;
-  if (!node || node.nodeType !== Node.TEXT_NODE) return;
-  const text = node.textContent;
   const divRect = div.getBoundingClientRect();
   const lineH = sz * 1.45;
   const allSpaces = [];
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] !== ' ') continue;
-    const range = document.createRange();
-    range.setStart(node, i);
-    range.setEnd(node, i + 1);
-    const rects = range.getClientRects();
-    if (!rects.length) continue;
-    const r = rects[0];
-    allSpaces.push({
-      el: div, left: r.left, right: r.right, top: r.top, width: r.width,
-      relLeft: r.left - divRect.left, relTop: r.top - divRect.top,
-      sentence: isSentenceSpace(text, i),
-    });
+
+  const walker = document.createTreeWalker(div, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {
+      return n.parentElement?.closest('.space-annot')
+        ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  // Concatenate text across nodes so sentence-space detection can look back
+  // across a node boundary; track per-node offsets for accurate Range rects.
+  let priorText = '';
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const text = node.textContent;
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] !== ' ') continue;
+      const range = document.createRange();
+      range.setStart(node, i);
+      range.setEnd(node, i + 1);
+      const rects = range.getClientRects();
+      if (!rects.length) continue;
+      const r = rects[0];
+      allSpaces.push({
+        el: div, left: r.left, right: r.right, top: r.top, width: r.width,
+        relLeft: r.left - divRect.left, relTop: r.top - divRect.top,
+        sentence: isSentenceSpace(priorText + text, priorText.length + i),
+      });
+    }
+    priorText += text;
   }
+
   const lines = [];
   for (const sp of allSpaces) {
     const line = lines.find(l => Math.abs(l[0].top - sp.top) < lineH * 0.5);
@@ -2118,9 +2141,14 @@ function renderRegular(text, colW, sz, lang, font, lines) {
 
   if (document.activeElement === colRegular) {
     // While editing keep plain-text mode so .sp spans never interfere with typing.
-    // Natural browser wrapping provides immediate visual line-breaking.
-    // Annotations are removed; they'll reappear on blur/re-render.
+    // The browser natively justifies + wraps the plain text (immediate line
+    // breaking), and we recompute the space annotations live from the actual
+    // rendered space positions via the Range API.
     removeAnnotations();
+    if (highlightSpaces || showRivers) {
+      const naturalSpW = naturalSpaceWidth(font, sz);
+      addSpaceHighlightsSingleDiv(colRegular, naturalSpW, sz);
+    }
     return;
   }
 
@@ -2160,8 +2188,10 @@ function applyEditableStyles(sz, lang, font, colW) {
   colRegular.style.lineHeight            = '1.45';
   colRegular.style.fontVariationSettings = fontVarSettings(font, font.wdthDefault, sz);
   colRegular.style.direction             = isAr ? 'rtl' : 'ltr';
-  // text-align only used in editing mode (line divs use white-space:nowrap when rendered)
-  colRegular.style.textAlign             = isAr ? 'right' : 'left';
+  // Justify only matters in editing mode: it stretches the plain-text spaces so
+  // the live annotations reveal the spacing deviations. Rendered line divs use
+  // white-space:nowrap, so this container value doesn't affect them.
+  colRegular.style.textAlign             = 'justify';
   if (colW) colRegular.style.width       = `${colW}px`;
 }
 
