@@ -893,7 +893,16 @@ function getSourceText() {
     for (const child of node.childNodes) t += extract(child);
     return t;
   }
-  return extract(colRegular).replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+  // Join direct children with a space so that the last word of one
+  // rendered line div doesn't merge with the first word of the next.
+  let raw = '';
+  for (const node of colRegular.childNodes) {
+    const piece = extract(node);
+    if (!piece) continue;
+    if (raw && !raw.endsWith(' ')) raw += ' ';
+    raw += piece;
+  }
+  return raw.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function setSourceText(text) {
@@ -930,11 +939,15 @@ colRegular.addEventListener('blur', () => {
   const text = getSourceText();
   colRegular.textContent = text; // collapse to a single text node
   updateEmptyState();
-  scheduleRender();
+  clearTimeout(renderTimer);
+  saveSession();
+  render();
 });
 colRegular.addEventListener('input', () => {
   updateEmptyState();
-  scheduleRender();
+  clearTimeout(renderTimer);
+  saveSession();
+  render();
 });
 colRegular.addEventListener('paste', e => {
   e.preventDefault();
