@@ -2236,10 +2236,12 @@ function renderEditModel(colW, sz, lang, font) {
     ].filter(Boolean).join(';');
     setLineContent(el, lines[i], colW, font, sz, font.wdthDefault, isLast);
     if (!isLast) {
-      // Zero-width boundary space → text content stays equal to the source.
+      // Zero-size boundary space → text content stays equal to the source
+      // without contributing to the line box (height:0 + top align so it can't
+      // inflate the line height).
       const bsp = document.createElement('span');
       bsp.className = 'bsp';
-      bsp.style.cssText = 'display:inline-block;width:0;overflow:hidden';
+      bsp.style.cssText = 'display:inline-block;width:0;height:0;overflow:hidden;vertical-align:top';
       bsp.appendChild(document.createTextNode(' '));
       el.appendChild(bsp);
     }
