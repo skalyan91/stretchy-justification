@@ -893,23 +893,6 @@ document.addEventListener('click', e => {
 // there into this variable.
 let sourceText = '';
 
-// Read the current text out of the contenteditable while it is in plain
-// editing mode. Skips .space-annot overlays; treats browser-inserted
-// block elements (e.g. from a multi-line paste) as spaces.
-function readEditingDOM() {
-  let raw = '';
-  for (const node of colRegular.childNodes) {
-    if (node.classList && node.classList.contains('space-annot')) continue;
-    if (node.nodeType === Node.TEXT_NODE) {
-      raw += node.textContent;
-    } else {
-      if (raw && !raw.endsWith(' ')) raw += ' ';
-      raw += node.textContent;
-    }
-  }
-  return raw.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
 function getSourceText() {
   return sourceText;
 }
@@ -943,35 +926,106 @@ function removeAnnotations() {
   colRegular.querySelectorAll('.space-annot').forEach(d => d.remove());
 }
 
-// Flatten the rendered line-div layout into a single plain-text node holding
-// the canonical source text. Done before the caret is placed (on mousedown)
-// so the browser positions the caret correctly in the editable plain text,
-// and as a fallback on focus for keyboard/programmatic focus.
-function enterEditMode() {
+// ── Caret ↔ source-offset mapping ─────────────────────
+// Both the plain-text edit layer and the rendered edit model have a text
+// content that equals the source text exactly (the model renders boundary
+// spaces between lines as zero-width spans), so the caret position maps to a
+// simple character offset, counted over text nodes while skipping the
+// non-text .space-annot overlay divs.
+function textLenSkipAnnot(root) {
+  let len = 0;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.parentElement?.closest('.space-annot')
+      ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+  });
+  while (walker.nextNode()) len += walker.currentNode.textContent.length;
+  return len;
+}
+function getCaretCharOffset() {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  const range = sel.getRangeAt(0);
+  if (!colRegular.contains(range.startContainer)) return null;
+  const pre = document.createRange();
+  pre.selectNodeContents(colRegular);
+  pre.setEnd(range.startContainer, range.startOffset);
+  return textLenSkipAnnot(pre.cloneContents());
+}
+function setCaretCharOffset(target) {
+  const sel = window.getSelection();
+  if (!sel) return;
+  const walker = document.createTreeWalker(colRegular, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.parentElement?.closest('.space-annot')
+      ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+  });
+  let offset = 0, last = null;
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const len = node.textContent.length;
+    if (offset + len >= target) {
+      const r = document.createRange();
+      r.setStart(node, Math.max(0, target - offset));
+      r.collapse(true);
+      sel.removeAllRanges(); sel.addRange(r);
+      return;
+    }
+    offset += len; last = node;
+  }
+  if (last) {
+    const r = document.createRange();
+    r.setStart(last, last.textContent.length); r.collapse(true);
+    sel.removeAllRanges(); sel.addRange(r);
+  }
+}
+
+// Flatten the rendered edit model into a single plain-text node holding the
+// canonical source text, preserving the caret. All editing mutations happen on
+// this plain-text layer (so spaces/caret/IME behave natively); the rich doubled-
+// spacing model is re-rendered after each edit.
+function flattenToPlain() {
   if (colRegular.classList.contains('is-empty')) return;
   if (colRegular.childNodes.length === 1 && colRegular.firstChild?.nodeType === Node.TEXT_NODE) return;
+  const caret = getCaretCharOffset();
   colRegular.textContent = sourceText;
+  if (caret != null) setCaretCharOffset(caret);
 }
-colRegular.addEventListener('mousedown', enterEditMode);
-colRegular.addEventListener('touchstart', enterEditMode, { passive: true });
+
+let composingText = false;
+function readPlainEdit() {
+  // colRegular is the plain-text edit layer here. Only normalise newlines to
+  // spaces — do NOT collapse space runs or trim, so the edited text stays
+  // character-for-character equal to the DOM (keeping caret offsets exact).
+  // Multiple/edge spaces are normalised on blur.
+  return (colRegular.textContent || '').replace(/\n+/g, ' ');
+}
+
+colRegular.addEventListener('mousedown', flattenToPlain);
+colRegular.addEventListener('touchstart', flattenToPlain, { passive: true });
+colRegular.addEventListener('compositionstart', () => { composingText = true; flattenToPlain(); });
+colRegular.addEventListener('beforeinput', e => { if (!e.isComposing) flattenToPlain(); });
 colRegular.addEventListener('focus', () => {
-  enterEditMode();
-  // Recompute the live space annotations immediately on entering edit mode
-  // (now that the element is focused, renderRegular keeps plain-text mode and
-  // overlays the annotations) rather than waiting for the first keystroke.
+  flattenToPlain();
   clearTimeout(renderTimer);
   render();
 });
-
-colRegular.addEventListener('blur', () => {
-  sourceText = readEditingDOM();
+colRegular.addEventListener('input', () => {
+  sourceText = readPlainEdit();
+  if (composingText) { updateEmptyState(); saveSession(); return; }
   updateEmptyState();
   clearTimeout(renderTimer);
   saveSession();
   render();
 });
-colRegular.addEventListener('input', () => {
-  sourceText = readEditingDOM();
+colRegular.addEventListener('compositionend', () => {
+  composingText = false;
+  sourceText = readPlainEdit();
+  updateEmptyState();
+  clearTimeout(renderTimer);
+  saveSession();
+  render();
+});
+colRegular.addEventListener('blur', () => {
+  sourceText = (sourceText || '').replace(/\s+/g, ' ').trim();
   updateEmptyState();
   clearTimeout(renderTimer);
   saveSession();
@@ -980,7 +1034,7 @@ colRegular.addEventListener('input', () => {
 colRegular.addEventListener('paste', e => {
   e.preventDefault();
   const text = (e.clipboardData || window.clipboardData).getData('text/plain');
-  document.execCommand('insertText', false, text);
+  document.execCommand('insertText', false, text.replace(/\s+/g, ' '));
 });
 colRegular.addEventListener('keydown', e => {
   if (e.key === 'Enter') {
@@ -1556,55 +1610,6 @@ function addSpaceHighlightsForLines(lineEls, naturalSpW, sz) {
   else renderSpaceHighlights(spacesByLine, sz * 1.45, naturalSpW);
 }
 
-// Single div with many visually-wrapped lines: used for the editable Regular
-// column while it is being typed (plain text, native CSS justification).
-// Scans every descendant text node (skipping .space-annot overlays) so it is
-// robust to the browser splitting the editable text into multiple nodes.
-function addSpaceHighlightsSingleDiv(div, naturalSpW, sz) {
-  div.style.position = 'relative';
-  const divRect = div.getBoundingClientRect();
-  const lineH = sz * 1.45;
-  const allSpaces = [];
-
-  const walker = document.createTreeWalker(div, NodeFilter.SHOW_TEXT, {
-    acceptNode(n) {
-      return n.parentElement?.closest('.space-annot')
-        ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
-    }
-  });
-  // Concatenate text across nodes so sentence-space detection can look back
-  // across a node boundary; track per-node offsets for accurate Range rects.
-  let priorText = '';
-  while (walker.nextNode()) {
-    const node = walker.currentNode;
-    const text = node.textContent;
-    for (let i = 0; i < text.length; i++) {
-      if (text[i] !== ' ') continue;
-      const range = document.createRange();
-      range.setStart(node, i);
-      range.setEnd(node, i + 1);
-      const rects = range.getClientRects();
-      if (!rects.length) continue;
-      const r = rects[0];
-      allSpaces.push({
-        el: div, left: r.left, right: r.right, top: r.top, width: r.width,
-        relLeft: r.left - divRect.left, relTop: r.top - divRect.top,
-        sentence: isSentenceSpace(priorText + text, priorText.length + i),
-      });
-    }
-    priorText += text;
-  }
-
-  const lines = [];
-  for (const sp of allSpaces) {
-    const line = lines.find(l => Math.abs(l[0].top - sp.top) < lineH * 0.5);
-    if (line) line.push(sp);
-    else lines.push([sp]);
-  }
-  if (showRivers) renderRiverHighlights(lines, lineH);
-  else renderSpaceHighlights(lines, lineH, naturalSpW);
-}
-
 // ── English: Knuth-Liang hyphenation via Hyphenopoly ──
 async function insertSoftHyphens(text) {
   const hyphenate = await window.Hyphenopoly.hyphenators["en-us"];
@@ -2140,15 +2145,11 @@ function renderRegular(text, colW, sz, lang, font, lines) {
   applyEditableStyles(sz, lang, font, colW);
 
   if (document.activeElement === colRegular) {
-    // While editing keep plain-text mode so .sp spans never interfere with typing.
-    // The browser natively justifies + wraps the plain text (immediate line
-    // breaking), and we recompute the space annotations live from the actual
-    // rendered space positions via the Range API.
-    removeAnnotations();
-    if (highlightSpaces || showRivers) {
-      const naturalSpW = naturalSpaceWidth(font, sz);
-      addSpaceHighlightsSingleDiv(colRegular, naturalSpW, sz);
-    }
+    // While editing, render the exact doubled-spacing justified model live
+    // (including the unjustified final line). Editing mutations happen on a
+    // flattened plain-text layer via flattenToPlain(); here we rebuild the
+    // model from the canonical sourceText and restore the caret.
+    renderEditModel(colW, sz, lang, font);
     return;
   }
 
@@ -2173,6 +2174,80 @@ function renderRegular(text, colW, sz, lang, font, lines) {
     frag.appendChild(el);
   }
   colRegular.appendChild(frag);
+
+  if (highlightSpaces || showRivers) {
+    const naturalSpW = naturalSpaceWidth(font, sz);
+    addSpaceHighlightsForLines(Array.from(colRegular.querySelectorAll('[lang]')), naturalSpW, sz);
+  }
+}
+
+// Greedy space-only line breaking (no hyphenation) for the live edit model,
+// using the doubled-sentence-space width model. No hyphens are introduced, so
+// the rendered text content equals the source exactly (needed for caret mapping).
+function breakSpaceOnly(text, colW, sz, font) {
+  // Keep empty tokens (from a trailing/leading space) so the rendered text
+  // content stays exactly equal to the source — required for caret mapping.
+  const words = text.split(' ');
+  if (!words.length) return [];
+  const spW = naturalSpaceWidthAt(font.wdthDefault, sz, font);
+  const lines = [];
+  let cur = [], curW = 0;
+  for (let i = 0; i < words.length; i++) {
+    const wWidth = words[i] ? measure(words[i], font.wdthDefault, sz, font) : 0;
+    // Width added by appending this word: a word space (2× if the previous word
+    // ends a sentence) plus the word itself.
+    const gap = cur.length
+      ? spW * ((!frenchSpacing && wordEndsSentence(cur[cur.length - 1])) ? 2 : 1)
+      : 0;
+    if (cur.length && curW + gap + wWidth > colW) {
+      lines.push(cur.join(' '));
+      cur = [words[i]]; curW = wWidth;
+    } else {
+      cur.push(words[i]); curW += gap + wWidth;
+    }
+  }
+  if (cur.length) lines.push(cur.join(' '));
+  return lines;
+}
+
+// Render the live edit model: the exact doubled-spacing justified layout
+// (last line unjustified but still doubling sentence spaces), with a zero-width
+// boundary space at the end of each non-final line so the element's text content
+// equals the source text — keeping caret offsets exact. Restores the caret.
+function renderEditModel(colW, sz, lang, font) {
+  const caret = getCaretCharOffset();
+  removeAnnotations();
+  colRegular.innerHTML = '';
+
+  const lines = breakSpaceOnly(sourceText, colW, sz, font);
+  const isAr = lang === 'ar';
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < lines.length; i++) {
+    const isLast = i === lines.length - 1;
+    const el = document.createElement('div');
+    el.setAttribute('lang', lang);
+    el.style.cssText = [
+      `font-family:'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`,
+      `font-size:${sz}px`,
+      `line-height:1.45`,
+      `font-variation-settings:${fontVarSettings(font, font.wdthDefault, sz)}`,
+      isAr ? 'direction:rtl' : '',
+      'white-space:nowrap',
+    ].filter(Boolean).join(';');
+    setLineContent(el, lines[i], colW, font, sz, font.wdthDefault, isLast);
+    if (!isLast) {
+      // Zero-width boundary space → text content stays equal to the source.
+      const bsp = document.createElement('span');
+      bsp.className = 'bsp';
+      bsp.style.cssText = 'display:inline-block;width:0;overflow:hidden';
+      bsp.appendChild(document.createTextNode(' '));
+      el.appendChild(bsp);
+    }
+    frag.appendChild(el);
+  }
+  colRegular.appendChild(frag);
+
+  if (caret != null) setCaretCharOffset(caret);
 
   if (highlightSpaces || showRivers) {
     const naturalSpW = naturalSpaceWidth(font, sz);
