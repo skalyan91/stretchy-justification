@@ -885,15 +885,15 @@ document.addEventListener('click', e => {
 
 // ── Editable text source ──────────────────────────────
 function getSourceText() {
-  // textContent is layout-independent and works reliably at init time.
-  // Skip annotation overlay divs (.space-annot).
-  let raw = '';
-  for (const node of colRegular.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE) raw += node.textContent;
-    else if (!(node.classList && node.classList.contains('space-annot')))
-      raw += (node.innerText ?? node.textContent);
+  // Recursively extract plain text, skipping .space-annot overlays.
+  function extract(node) {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+    if (node.classList && node.classList.contains('space-annot')) return '';
+    let t = '';
+    for (const child of node.childNodes) t += extract(child);
+    return t;
   }
-  return raw.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+  return extract(colRegular).replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function setSourceText(text) {
@@ -925,15 +925,10 @@ function removeAnnotations() {
 }
 
 colRegular.addEventListener('blur', () => {
-  // Normalize browser-inserted markup to plain text
+  // Extract plain text from whatever structure editing may have produced,
+  // then let the next render rebuild the proper line-div layout.
   const text = getSourceText();
-  if (text) {
-    if (colRegular.childNodes.length !== 1 || colRegular.firstChild.nodeType !== Node.TEXT_NODE) {
-      colRegular.textContent = text;
-    }
-  } else {
-    colRegular.innerHTML = '';
-  }
+  colRegular.textContent = text; // collapse to a single text node
   updateEmptyState();
   scheduleRender();
 });
@@ -2062,37 +2057,59 @@ async function render() {
   colRegular.style.width  = `${colW}px`;
   colStretchy.style.width = `${colW}px`;
 
-  renderRegular(text, colW, sz, lang, font);
-
-  let stretchyLines;
+  let normalLines = null, stretchyLines = null;
   if (lang === 'ta') {
+    normalLines   = await layoutTamil(text, colW, sz, font);
+    if (renderId !== myId) return;
     stretchyLines = await layoutTamilStretchy(text, colW, sz, font);
     if (renderId !== myId) return;
   } else if (lang === 'ar') {
-    stretchyLines = layoutArabic(text, colW, sz, font);
+    normalLines = stretchyLines = layoutArabic(text, colW, sz, font);
   } else {
-    stretchyLines = await layoutEnglish(text, colW, sz, font);
+    normalLines = stretchyLines = await layoutEnglish(text, colW, sz, font);
     if (renderId !== myId) return;
   }
+
+  renderRegular(text, colW, sz, lang, font, normalLines);
 
   await renderStretchy(text, colW, sz, lang, font, stretchyLines, myId);
   if (renderId !== myId) return;
   updateColWidthMin();
 }
 
-function renderRegular(text, colW, sz, lang, font) {
-  removeAnnotations();
-  // Only replace textContent when not focused to avoid disrupting the cursor
-  if (document.activeElement !== colRegular) {
-    colRegular.textContent = text;
-  }
-  applyEditableStyles(sz, lang, font, colW);
+function renderRegular(text, colW, sz, lang, font, lines) {
   colRegular.classList.remove('is-empty');
   colStretchy.classList.remove('is-empty');
+  applyEditableStyles(sz, lang, font, colW);
+
+  // While focused keep content untouched to preserve the cursor
+  if (document.activeElement === colRegular) return;
+
+  removeAnnotations();
+  colRegular.innerHTML = '';
+
+  const isAr = lang === 'ar';
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i]) continue;
+    const el = document.createElement('div');
+    el.setAttribute('lang', lang);
+    el.style.cssText = [
+      `font-family:'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`,
+      `font-size:${sz}px`,
+      `line-height:1.45`,
+      `font-variation-settings:${fontVarSettings(font, font.wdthDefault, sz)}`,
+      isAr ? 'direction:rtl' : '',
+      'white-space:nowrap',
+    ].filter(Boolean).join(';');
+    setLineContent(el, lines[i], colW, font, sz, font.wdthDefault, i === lines.length - 1);
+    frag.appendChild(el);
+  }
+  colRegular.appendChild(frag);
 
   if (highlightSpaces || showRivers) {
     const naturalSpW = naturalSpaceWidth(font, sz);
-    addSpaceHighlightsSingleDiv(colRegular, naturalSpW, sz);
+    addSpaceHighlightsForLines(Array.from(colRegular.querySelectorAll('[lang]')), naturalSpW, sz);
   }
 }
 
@@ -2104,7 +2121,8 @@ function applyEditableStyles(sz, lang, font, colW) {
   colRegular.style.lineHeight            = '1.45';
   colRegular.style.fontVariationSettings = fontVarSettings(font, font.wdthDefault, sz);
   colRegular.style.direction             = isAr ? 'rtl' : 'ltr';
-  colRegular.style.textAlign             = isAr ? 'right' : 'justify';
+  // text-align only used in editing mode (line divs use white-space:nowrap when rendered)
+  colRegular.style.textAlign             = isAr ? 'right' : 'left';
   if (colW) colRegular.style.width       = `${colW}px`;
 }
 
