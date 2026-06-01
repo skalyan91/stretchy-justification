@@ -934,10 +934,6 @@ function removeAnnotations() {
 }
 
 colRegular.addEventListener('blur', () => {
-  // Extract plain text from whatever structure editing may have produced,
-  // then let the next render rebuild the proper line-div layout.
-  const text = getSourceText();
-  colRegular.textContent = text; // collapse to a single text node
   updateEmptyState();
   clearTimeout(renderTimer);
   saveSession();
@@ -2090,13 +2086,55 @@ async function render() {
   updateColWidthMin();
 }
 
+// ── Cursor save / restore for renderRegular ──────────
+function getCursorCharOffset() {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  const range = sel.getRangeAt(0);
+  let offset = 0;
+  const walker = document.createTreeWalker(colRegular, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (node === range.startContainer) { offset += range.startOffset; break; }
+    offset += node.textContent.length;
+  }
+  return offset;
+}
+
+function setCursorCharOffset(offset) {
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+  let remaining = offset;
+  const walker = document.createTreeWalker(colRegular, NodeFilter.SHOW_TEXT);
+  let lastNode = null;
+  while (walker.nextNode()) {
+    lastNode = walker.currentNode;
+    if (remaining <= lastNode.textContent.length) {
+      range.setStart(lastNode, remaining);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      return;
+    }
+    remaining -= lastNode.textContent.length;
+  }
+  if (lastNode) {
+    range.setStart(lastNode, lastNode.textContent.length);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+}
+
 function renderRegular(text, colW, sz, lang, font, lines) {
   colRegular.classList.remove('is-empty');
   colStretchy.classList.remove('is-empty');
   applyEditableStyles(sz, lang, font, colW);
 
-  // While focused keep content untouched to preserve the cursor
-  if (document.activeElement === colRegular) return;
+  // Save cursor offset so we can restore it after rebuilding the DOM.
+  const isFocused = document.activeElement === colRegular;
+  const cursorOffset = isFocused ? getCursorCharOffset() : null;
 
   removeAnnotations();
   colRegular.innerHTML = '';
@@ -2119,6 +2157,8 @@ function renderRegular(text, colW, sz, lang, font, lines) {
     frag.appendChild(el);
   }
   colRegular.appendChild(frag);
+
+  if (cursorOffset !== null) setCursorCharOffset(cursorOffset);
 
   if (highlightSpaces || showRivers) {
     const naturalSpW = naturalSpaceWidth(font, sz);
