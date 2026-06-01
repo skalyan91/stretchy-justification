@@ -884,30 +884,40 @@ document.addEventListener('click', e => {
 });
 
 // ── Editable text source ──────────────────────────────
-function getSourceText() {
-  // Recursively extract plain text, skipping .space-annot overlays.
-  function extract(node) {
-    if (node.nodeType === Node.TEXT_NODE) return node.textContent;
-    if (node.classList && node.classList.contains('space-annot')) return '';
-    let t = '';
-    for (const child of node.childNodes) t += extract(child);
-    return t;
-  }
-  // Join direct children with a space so that the last word of one
-  // rendered line div doesn't merge with the first word of the next.
+// The canonical source text lives in this variable, NOT in the DOM.
+// The Regular column's DOM holds rendered line divs (with hyphenation
+// hyphens and explicit-width space spans) which cannot be losslessly
+// reconstructed back into source text — so we never read source text
+// from that rendered structure. While the column is being edited it is
+// flattened to a single plain-text node, and edits are read back from
+// there into this variable.
+let sourceText = '';
+
+// Read the current text out of the contenteditable while it is in plain
+// editing mode. Skips .space-annot overlays; treats browser-inserted
+// block elements (e.g. from a multi-line paste) as spaces.
+function readEditingDOM() {
   let raw = '';
   for (const node of colRegular.childNodes) {
-    const piece = extract(node);
-    if (!piece) continue;
-    if (raw && !raw.endsWith(' ')) raw += ' ';
-    raw += piece;
+    if (node.classList && node.classList.contains('space-annot')) continue;
+    if (node.nodeType === Node.TEXT_NODE) {
+      raw += node.textContent;
+    } else {
+      if (raw && !raw.endsWith(' ')) raw += ' ';
+      raw += node.textContent;
+    }
   }
   return raw.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function getSourceText() {
+  return sourceText;
+}
+
 function setSourceText(text) {
-  colRegular.textContent = text || '';
-  setEmptyState(!text || !text.trim());
+  sourceText = (text || '').replace(/\s+/g, ' ').trim();
+  colRegular.textContent = sourceText;
+  setEmptyState(!sourceText);
 }
 
 function updateEmptyState() {
@@ -933,13 +943,28 @@ function removeAnnotations() {
   colRegular.querySelectorAll('.space-annot').forEach(d => d.remove());
 }
 
+// Flatten the rendered line-div layout into a single plain-text node holding
+// the canonical source text. Done before the caret is placed (on mousedown)
+// so the browser positions the caret correctly in the editable plain text,
+// and as a fallback on focus for keyboard/programmatic focus.
+function enterEditMode() {
+  if (colRegular.classList.contains('is-empty')) return;
+  if (colRegular.childNodes.length === 1 && colRegular.firstChild?.nodeType === Node.TEXT_NODE) return;
+  colRegular.textContent = sourceText;
+}
+colRegular.addEventListener('mousedown', enterEditMode);
+colRegular.addEventListener('touchstart', enterEditMode, { passive: true });
+colRegular.addEventListener('focus', enterEditMode);
+
 colRegular.addEventListener('blur', () => {
+  sourceText = readEditingDOM();
   updateEmptyState();
   clearTimeout(renderTimer);
   saveSession();
   render();
 });
 colRegular.addEventListener('input', () => {
+  sourceText = readEditingDOM();
   updateEmptyState();
   clearTimeout(renderTimer);
   saveSession();
@@ -2086,55 +2111,18 @@ async function render() {
   updateColWidthMin();
 }
 
-// ── Cursor save / restore for renderRegular ──────────
-function getCursorCharOffset() {
-  const sel = window.getSelection();
-  if (!sel || !sel.rangeCount) return null;
-  const range = sel.getRangeAt(0);
-  let offset = 0;
-  const walker = document.createTreeWalker(colRegular, NodeFilter.SHOW_TEXT);
-  while (walker.nextNode()) {
-    const node = walker.currentNode;
-    if (node === range.startContainer) { offset += range.startOffset; break; }
-    offset += node.textContent.length;
-  }
-  return offset;
-}
-
-function setCursorCharOffset(offset) {
-  const sel = window.getSelection();
-  if (!sel) return;
-  const range = document.createRange();
-  let remaining = offset;
-  const walker = document.createTreeWalker(colRegular, NodeFilter.SHOW_TEXT);
-  let lastNode = null;
-  while (walker.nextNode()) {
-    lastNode = walker.currentNode;
-    if (remaining <= lastNode.textContent.length) {
-      range.setStart(lastNode, remaining);
-      range.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(range);
-      return;
-    }
-    remaining -= lastNode.textContent.length;
-  }
-  if (lastNode) {
-    range.setStart(lastNode, lastNode.textContent.length);
-    range.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(range);
-  }
-}
-
 function renderRegular(text, colW, sz, lang, font, lines) {
   colRegular.classList.remove('is-empty');
   colStretchy.classList.remove('is-empty');
   applyEditableStyles(sz, lang, font, colW);
 
-  // Save cursor offset so we can restore it after rebuilding the DOM.
-  const isFocused = document.activeElement === colRegular;
-  const cursorOffset = isFocused ? getCursorCharOffset() : null;
+  if (document.activeElement === colRegular) {
+    // While editing keep plain-text mode so .sp spans never interfere with typing.
+    // Natural browser wrapping provides immediate visual line-breaking.
+    // Annotations are removed; they'll reappear on blur/re-render.
+    removeAnnotations();
+    return;
+  }
 
   removeAnnotations();
   colRegular.innerHTML = '';
@@ -2157,8 +2145,6 @@ function renderRegular(text, colW, sz, lang, font, lines) {
     frag.appendChild(el);
   }
   colRegular.appendChild(frag);
-
-  if (cursorOffset !== null) setCursorCharOffset(cursorOffset);
 
   if (highlightSpaces || showRivers) {
     const naturalSpW = naturalSpaceWidth(font, sz);
