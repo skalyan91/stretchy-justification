@@ -372,26 +372,17 @@
     .mobile-bar {
       display: none;
       align-items: center;
-      gap: 10px;
-      padding: 0 14px;
+      gap: 6px;
+      padding: 0 10px;
       height: 44px;
       flex-shrink: 0;
       background: var(--panel);
       border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
     }
-
-    .hamburger-btn {
-      width: 32px; height: 32px;
-      display: flex; flex-direction: column;
-      justify-content: center; align-items: center;
-      gap: 5px;
-      background: none; border: none;
-      cursor: pointer; border-radius: 4px; padding: 0; flex-shrink: 0;
-    }
-    .hamburger-btn span {
-      display: block; width: 18px; height: 2px;
-      background: var(--fg); border-radius: 1px;
-    }
+    .mobile-bar::-webkit-scrollbar { display: none; }
 
     /* ── Bar controls (inside .mobile-bar) ───────────────── */
     .bar-controls {
@@ -411,8 +402,8 @@
       font-size: 11px;
       color: var(--muted);
     }
-    .bar-num {
-      width: 50px;
+    input.bar-num {
+      width: 38px;
       border: 1px solid var(--border);
       border-radius: 3px;
       padding: 3px 4px;
@@ -422,7 +413,7 @@
       background: var(--bg);
       color: var(--fg);
     }
-    .bar-num:focus { outline: 1.5px solid var(--fg); border-color: transparent; }
+    input.bar-num:focus { outline: 1.5px solid var(--fg); border-color: transparent; }
     .bar-check-label {
       display: flex;
       align-items: center;
@@ -483,32 +474,91 @@
     }
     .sidebar-close:hover { color: var(--fg); }
 
-    /* Sheet backdrop */
-    .backdrop {
-      display: none; position: fixed; inset: 0;
-      background: rgba(0,0,0,0.35); z-index: 150;
+    /* ── Contenteditable Regular column ─────────────────── */
+    #col-regular[contenteditable] {
+      outline: none;
+      cursor: text;
+      white-space: normal;
+      word-break: break-word;
+      overflow-wrap: break-word;
+      text-align: justify;
+      -webkit-user-modify: read-write-plaintext-only;
     }
-    .backdrop.visible { display: block; }
+    #col-regular[contenteditable]:focus { outline: none; }
+    .col.is-empty {
+      text-align: left !important;
+      direction: ltr !important;
+    }
+    .col.is-empty::before {
+      content: 'Type or paste text here\2026';
+      display: block;
+      color: var(--muted);
+      opacity: 0.4;
+      pointer-events: none;
+      font-family: var(--ui) !important;
+      font-variation-settings: 'wdth' 110 !important;
+      font-optical-sizing: auto !important;
+      font-weight: 400 !important;
+      line-height: 1.6 !important;
+      white-space: normal !important;
+    }
+
+    /* ── Sidebar action buttons (Clear / Reset) ──────────── */
+    .sidebar-actions { display: flex; gap: 6px; }
+
+    /* ── Bar action buttons (Clear / Reset on mobile) ────── */
+    .bar-action-btn {
+      flex-shrink: 0;
+      padding: 3px 8px;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      background: none;
+      font-family: var(--ui);
+      font-size: 11.5px;
+      cursor: pointer;
+      color: var(--fg);
+      white-space: nowrap;
+    }
+    .bar-action-btn:hover { background: var(--bg); }
+
+    /* ── Bar language select ─────────────────────────────── */
+    .bar-lang-select {
+      flex-shrink: 0;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 3px 4px;
+      font-family: var(--ui);
+      font-size: 11.5px;
+      background: var(--bg);
+      color: var(--fg);
+      cursor: pointer;
+    }
+    .bar-lang-select:focus { outline: 1.5px solid var(--fg); border-color: transparent; }
+
+    /* ── Mobile bottom bar ───────────────────────────────── */
+    .mobile-bottom-bar {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      height: 36px;
+      flex-shrink: 0;
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .mobile-bottom-bar a { color: var(--muted); text-decoration: none; }
+    .mobile-bottom-bar a:hover { text-decoration: underline; }
 
     /* ── Mobile layout ───────────────────────────────────── */
     @media (max-width: 768px) {
       body { flex-direction: column; }
 
-      .mobile-bar { display: flex; }
+      .mobile-bar         { display: flex; }
+      .mobile-bottom-bar  { display: flex; }
 
-      aside {
-        position: fixed;
-        inset: 0 auto 0 0;
-        z-index: 200;
-        transform: translateX(-260px);
-        transition: transform 0.28s ease;
-        box-shadow: none;
-      }
-      aside.open {
-        transform: translateX(0);
-        box-shadow: 4px 0 20px rgba(0,0,0,0.15);
-      }
-      .sidebar-close { display: block; }
+      aside { display: none; }
 
       .comparison {
         flex-direction: column;
@@ -527,26 +577,6 @@
         margin: 0 -16px;
         padding: 20px 16px 18px;
       }
-
-      .cw-slider-item { display: none; }
-      #sidebar-settings { display: none; }
-      #sidebar-wdth     { display: none; }
-
-      /* Textarea fills remaining sidebar height */
-      aside { overflow-y: hidden; }
-      .sidebar-header,
-      .s-section  { flex-shrink: 0; }
-      #sidebar-text {
-        flex: 1;
-        min-height: 0;
-      }
-      #sidebar-text textarea {
-        flex: 1;
-        min-height: 60px;
-        max-height: none;
-        resize: none;
-        overflow-y: auto;
-      }
     }
   </style>
 </head>
@@ -555,48 +585,58 @@
 <span id="ms"></span>
 
 <div class="mobile-bar">
-  <button class="hamburger-btn" id="hamburger-btn" aria-label="Open settings">
-    <span></span><span></span><span></span>
-  </button>
-  <div class="bar-controls">
-    <div class="bar-field">
-      <span class="bar-field-label">Size</span>
-      <input type="number" id="hb-fs-num" class="bar-num" min="8" max="96" value="24">
-    </div>
-    <div class="bar-sep"></div>
-    <label class="bar-check-label">
+  <select class="bar-lang-select" id="hb-lang-select" aria-label="Language">
+    <option value="en">English</option>
+    <option value="ta">Tamil</option>
+    <option value="ar">Arabic</option>
+  </select>
+  <div class="bar-sep"></div>
+  <div class="bar-field">
+    <span class="bar-field-label">Size</span>
+    <input type="number" id="hb-fs-num" class="bar-num" min="8" max="96" step="1" value="24">
+  </div>
+  <div class="bar-sep"></div>
+  <button class="bar-action-btn" id="hb-clear-btn">Clear</button>
+  <button class="bar-action-btn" id="hb-reset-btn">Reset</button>
+  <div class="bar-sep"></div>
+  <button class="bar-drawer-btn" id="settings-drawer-btn" aria-expanded="false">Settings ▾</button>
+</div>
+<div class="bar-drawer" id="settings-drawer">
+  <div class="s-label" style="margin-bottom:8px">Display</div>
+  <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+    <label class="check-row">
       <input type="checkbox" id="hb-highlight-cb" checked>
-      Spaces
+      Space highlights
     </label>
-    <label class="bar-check-label">
+    <label class="check-row">
       <input type="checkbox" id="hb-rivers-cb">
       Rivers
     </label>
-    <label class="bar-check-label">
+    <label class="check-row">
       <input type="checkbox" id="hb-french-cb">
-      French
+      French spacing
     </label>
-    <button class="bar-drawer-btn" id="wdth-drawer-btn" aria-expanded="false">wdth ▾</button>
   </div>
-</div>
-<div class="bar-drawer" id="wdth-drawer">
   <div class="s-label" style="margin-bottom:8px">Width axis subset</div>
-  <div class="range-dual-wrap">
+  <div class="range-dual-wrap" id="hb-wdth-dual">
     <div class="range-track-bg"></div>
     <div class="range-fill" id="hb-wdth-fill"></div>
     <input type="range" id="hb-wdth-lo-range">
     <input type="range" id="hb-wdth-hi-range">
   </div>
-  <div class="wdth-num-row" style="margin-top:6px">
+  <div class="wdth-num-row" style="margin-top:6px;margin-bottom:14px">
     <span class="wdth-num-label">Min</span>
     <input type="number" id="hb-wdth-lo-num" step="1">
     <span class="wdth-spacer"></span>
     <span class="wdth-num-label">Max</span>
     <input type="number" id="hb-wdth-hi-num" step="1">
   </div>
+  <div class="s-label" style="margin-bottom:8px">Font</div>
+  <div class="btn-row" style="margin-bottom:8px">
+    <button class="btn btn-outline" id="hb-upload-btn">Upload override…</button>
+  </div>
+  <div id="hb-font-info" style="font-size:11px;line-height:1.6;color:var(--muted)">Loading…</div>
 </div>
-<div class="backdrop" id="backdrop"></div>
-
 <aside>
   <div class="sidebar-header">
     <div class="sidebar-header-row">
@@ -622,7 +662,10 @@
       <button class="preset-btn" id="btn-tamil">Tamil</button>
       <button class="preset-btn" id="btn-arabic">Arabic</button>
     </div>
-    <textarea id="text-input" placeholder="Type or paste text, or use a preset…" rows="5"></textarea>
+    <div class="sidebar-actions">
+      <button class="btn btn-outline" id="clear-btn">Clear</button>
+      <button class="btn btn-outline" id="reset-btn">Reset</button>
+    </div>
   </div>
 
   <div class="s-section" id="sidebar-settings">
@@ -644,8 +687,8 @@
           <span class="slider-unit">px</span>
         </div>
         <div class="slider-controls">
-          <input type="range"  id="fs-range" min="8" max="96" value="24">
-          <input type="number" id="fs-num"   min="8" max="96" value="24">
+          <input type="range"  id="fs-range" min="8" max="96" step="1" value="24">
+          <input type="number" id="fs-num"   min="8" max="96" step="1" value="24">
         </div>
       </div>
     </div>
@@ -689,14 +732,17 @@
 <div class="comparison">
   <section class="panel">
     <div class="panel-label">Regular</div>
-    <div class="col" id="col-regular">
-      <p class="placeholder">Loading…</p>
-    </div>
+    <div class="col" id="col-regular" contenteditable="true" spellcheck="false" autocorrect="off" autocapitalize="off" data-gramm="false"></div>
   </section>
   <section class="panel">
     <div class="panel-label">Stretchy</div>
     <div class="col" id="col-stretchy"></div>
   </section>
+</div>
+
+<div class="mobile-bottom-bar">
+  <span>Siva Kalyan, 2026</span>
+  <a href="https://github.com/skalyan91/stretchy-justification" target="_blank" rel="noopener">GitHub</a>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/hyphenopoly@6.1.0/Hyphenopoly_Loader.js"></script>
@@ -759,7 +805,6 @@ const get = id => document.getElementById(id);
 const fontFileEl  = get('font-file');
 const uploadBtn   = get('upload-btn');
 const fontInfoEl  = get('font-info');
-const textarea    = get('text-input');
 const cwRange     = get('cw-range');
 const cwNum       = get('cw-num');
 const fsRange     = get('fs-range');
@@ -776,14 +821,21 @@ const wdthHiRange   = get('wdth-hi-range');
 const wdthLoNum     = get('wdth-lo-num');
 const wdthHiNum     = get('wdth-hi-num');
 const wdthFillEl    = get('wdth-fill');
+const clearBtn      = get('clear-btn');
+const resetBtn      = get('reset-btn');
 
 // ── Bar control DOM refs ──────────────────────────────
-const hbFsNum       = get('hb-fs-num');
-const hbHighlightCb = get('hb-highlight-cb');
-const hbRiversCb    = get('hb-rivers-cb');
-const hbFrenchCb    = get('hb-french-cb');
-const wdthDrawerBtn = get('wdth-drawer-btn');
-const wdthDrawerEl  = get('wdth-drawer');
+const hbFsNum         = get('hb-fs-num');
+const hbHighlightCb   = get('hb-highlight-cb');
+const hbRiversCb      = get('hb-rivers-cb');
+const hbFrenchCb      = get('hb-french-cb');
+const hbLangSelect    = get('hb-lang-select');
+const hbClearBtn      = get('hb-clear-btn');
+const hbResetBtn      = get('hb-reset-btn');
+const hbUploadBtn       = get('hb-upload-btn');
+const hbFontInfoEl      = get('hb-font-info');
+const settingsDrawerBtn = get('settings-drawer-btn');
+const settingsDrawerEl  = get('settings-drawer');
 const hbWdthLoRange = get('hb-wdth-lo-range');
 const hbWdthHiRange = get('hb-wdth-hi-range');
 const hbWdthLoNum   = get('hb-wdth-lo-num');
@@ -794,23 +846,7 @@ const hbWdthFillEl  = get('hb-wdth-fill');
 function isMobile() { return window.innerWidth <= 768; }
 function mobileColW() { return Math.max(100, window.innerWidth - 96); }
 
-const hamburgerBtn = get('hamburger-btn');
-const backdropEl   = get('backdrop');
-const sidebarEl    = document.querySelector('aside');
-const sidebarClose = get('sidebar-close');
-const panels       = document.querySelectorAll('.panel');
-
-function openSidebar()  { sidebarEl.classList.add('open');    backdropEl.classList.add('visible'); }
-function closeSidebar() { sidebarEl.classList.remove('open'); backdropEl.classList.remove('visible'); }
-
-hamburgerBtn.addEventListener('click', () => {
-  wdthDrawerEl.classList.remove('open');
-  wdthDrawerBtn.classList.remove('open');
-  wdthDrawerBtn.setAttribute('aria-expanded', 'false');
-  sidebarEl.classList.contains('open') ? closeSidebar() : openSidebar();
-});
-backdropEl.addEventListener('click',  closeSidebar);
-sidebarClose.addEventListener('click', closeSidebar);
+const panels = document.querySelectorAll('.panel');
 
 // Synchronized scrolling between panels (mobile only)
 let scrollLock = false;
@@ -824,6 +860,128 @@ panels[1].addEventListener('scroll', () => {
   scrollLock = true;
   try { panels[0].scrollTop = panels[1].scrollTop; } finally { scrollLock = false; }
 });
+
+// ── Drawer helpers ────────────────────────────────────
+function closeAllDrawers() {
+  settingsDrawerEl.classList.remove('open');
+  settingsDrawerBtn.classList.remove('open');
+  settingsDrawerBtn.setAttribute('aria-expanded', 'false');
+}
+function toggleDrawer() {
+  const opening = !settingsDrawerEl.classList.contains('open');
+  closeAllDrawers();
+  if (opening) {
+    settingsDrawerEl.classList.add('open');
+    settingsDrawerBtn.classList.add('open');
+    settingsDrawerBtn.setAttribute('aria-expanded', 'true');
+  }
+}
+settingsDrawerBtn.addEventListener('click', e => { e.stopPropagation(); toggleDrawer(); });
+document.addEventListener('click', e => {
+  if (!settingsDrawerEl.classList.contains('open')) return;
+  if (!settingsDrawerEl.contains(e.target) && !settingsDrawerBtn.contains(e.target))
+    closeAllDrawers();
+});
+
+// ── Editable text source ──────────────────────────────
+function getSourceText() {
+  // textContent is layout-independent and works reliably at init time.
+  // Skip annotation overlay divs (.space-annot).
+  let raw = '';
+  for (const node of colRegular.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) raw += node.textContent;
+    else if (!(node.classList && node.classList.contains('space-annot')))
+      raw += (node.innerText ?? node.textContent);
+  }
+  return raw.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function setSourceText(text) {
+  colRegular.textContent = text || '';
+  setEmptyState(!text || !text.trim());
+}
+
+function updateEmptyState() {
+  setEmptyState(!getSourceText());
+}
+
+function setEmptyState(empty) {
+  colRegular.classList.toggle('is-empty', empty);
+  colStretchy.classList.toggle('is-empty', empty);
+  if (empty) {
+    colStretchy.innerHTML = '';
+    // Ensure both columns have the current font size so ::before inherits it
+    const fsPx = `${+fsRange.value}px`;
+    colRegular.style.fontSize = fsPx;
+    colStretchy.style.fontSize = fsPx;
+    colStretchy.style.lineHeight = '1.45';
+    const colW = isMobile() ? mobileColW() : Math.min(+cwRange.value || 400, colWidthMax());
+    colStretchy.style.width = colRegular.style.width || `${colW}px`;
+  }
+}
+
+function removeAnnotations() {
+  colRegular.querySelectorAll('.space-annot').forEach(d => d.remove());
+}
+
+colRegular.addEventListener('blur', () => {
+  // Normalize browser-inserted markup to plain text
+  const text = getSourceText();
+  if (text) {
+    if (colRegular.childNodes.length !== 1 || colRegular.firstChild.nodeType !== Node.TEXT_NODE) {
+      colRegular.textContent = text;
+    }
+  } else {
+    colRegular.innerHTML = '';
+  }
+  updateEmptyState();
+  scheduleRender();
+});
+colRegular.addEventListener('input', () => {
+  updateEmptyState();
+  scheduleRender();
+});
+colRegular.addEventListener('paste', e => {
+  e.preventDefault();
+  const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+  document.execCommand('insertText', false, text);
+});
+colRegular.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    document.execCommand('insertText', false, ' ');
+  }
+});
+
+// ── Clear / Reset ─────────────────────────────────────
+function doClear() {
+  setSourceText('');
+  colStretchy.innerHTML = '';
+  saveSession();
+}
+function doReset() {
+  // Detect language from current text; fall back to lang-select value on mobile
+  const text = getSourceText();
+  const lang = text ? detectLang(text) : (hbLangSelect?.value ?? 'en');
+  setSourceText(PRESETS[lang] ?? ENGLISH);
+  resetColWidth();
+  scheduleRender();
+}
+
+clearBtn.addEventListener('click',   doClear);
+resetBtn.addEventListener('click',   doReset);
+hbClearBtn.addEventListener('click', doClear);
+hbResetBtn.addEventListener('click', doReset);
+
+// ── Language select (mobile) ──────────────────────────
+const PRESETS = { en: ENGLISH, ta: TAMIL, ar: ARABIC };
+hbLangSelect.addEventListener('change', () => {
+  const preset = PRESETS[hbLangSelect.value];
+  if (preset) { setSourceText(preset); resetColWidth(); scheduleRender(); }
+});
+
+// ── Font upload (mobile) ──────────────────────────────
+hbUploadBtn.addEventListener('click', () => fontFileEl.click());
 
 // ── Bundled font auto-load ────────────────────────────
 async function loadBundledFonts() {
@@ -874,10 +1032,12 @@ async function registerFont(family, buf, fontObj) {
 }
 
 function updateFontInfo() {
-  fontInfoEl.innerHTML =
+  const html =
     `<strong>English</strong> &nbsp;Amstelvar &nbsp;<code>${enFont.axisTag} ${enFont.wdthMin}–${enFont.wdthMax}</code><br>` +
     `<strong>Tamil</strong> &nbsp;&nbsp;&nbsp;Korkai &nbsp;<code>${taFont.axisTag} ${taFont.wdthMin}–${taFont.wdthMax}</code><br>` +
     `<strong>Arabic</strong> &nbsp;&nbsp;Estedad &nbsp;<code>${arFont.axisTag} ${arFont.wdthMin}–${arFont.wdthMax}</code>`;
+  fontInfoEl.innerHTML = html;
+  hbFontInfoEl.innerHTML = html;
 }
 
 // ── Font upload override ──────────────────────────────
@@ -892,7 +1052,7 @@ async function loadFontOverride(source) {
   let parsed;
   try { parsed = parseFont(buf); } catch { return; }
 
-  const lang = detectLang(textarea.value.trim());
+  const lang = detectLang(getSourceText());
   const fontObj = fontFor(lang);
   const stretchAxis = parsed.tables.fvar?.axes.find(a => a.tag === fontObj.axisTag)
                    ?? parsed.tables.fvar?.axes.find(a => a.tag === 'wdth');
@@ -908,16 +1068,17 @@ async function loadFontOverride(source) {
 }
 
 // ── Slider two-way binding ────────────────────────────
-function bindSlider(range, num) {
+function bindSlider(range, num, integer = false) {
   range.addEventListener('input',  () => { num.value = range.value; scheduleRender(); });
   num.addEventListener('change',   () => {
-    const v = Math.max(+num.min, Math.min(+num.max, +num.value || 0));
+    let v = Math.max(+num.min, Math.min(+num.max, +num.value || 0));
+    if (integer) v = Math.round(v);
     num.value = v; range.value = v;
     scheduleRender();
   });
 }
 bindSlider(cwRange, cwNum);
-bindSlider(fsRange, fsNum);
+bindSlider(fsRange, fsNum, true);
 // Font size changes alter line count, so re-compute the initial column width.
 fsRange.addEventListener('input',  resetColWidth);
 fsNum.addEventListener('change',   resetColWidth);
@@ -985,28 +1146,28 @@ function updateWdthUI(font) {
 }
 
 wdthLoRange.addEventListener('input', () => {
-  const font = fontFor(detectLang(textarea.value.trim()));
+  const font = fontFor(detectLang(getSourceText()));
   font.wdthLo = Math.min(+wdthLoRange.value, font.wdthDefault);
   wdthLoRange.value = font.wdthLo; wdthLoNum.value = font.wdthLo;
   hbWdthLoRange.value = font.wdthLo; hbWdthLoNum.value = font.wdthLo;
   updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 });
 wdthHiRange.addEventListener('input', () => {
-  const font = fontFor(detectLang(textarea.value.trim()));
+  const font = fontFor(detectLang(getSourceText()));
   font.wdthHi = Math.max(+wdthHiRange.value, font.wdthDefault);
   wdthHiRange.value = font.wdthHi; wdthHiNum.value = font.wdthHi;
   hbWdthHiRange.value = font.wdthHi; hbWdthHiNum.value = font.wdthHi;
   updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 });
 wdthLoNum.addEventListener('change', () => {
-  const font = fontFor(detectLang(textarea.value.trim()));
+  const font = fontFor(detectLang(getSourceText()));
   font.wdthLo = Math.max(font.wdthMin, Math.min(Math.round(+wdthLoNum.value), font.wdthDefault));
   wdthLoNum.value = font.wdthLo; wdthLoRange.value = font.wdthLo;
   hbWdthLoRange.value = font.wdthLo; hbWdthLoNum.value = font.wdthLo;
   updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 });
 wdthHiNum.addEventListener('change', () => {
-  const font = fontFor(detectLang(textarea.value.trim()));
+  const font = fontFor(detectLang(getSourceText()));
   font.wdthHi = Math.min(font.wdthMax, Math.max(Math.round(+wdthHiNum.value), font.wdthDefault));
   wdthHiNum.value = font.wdthHi; wdthHiRange.value = font.wdthHi;
   hbWdthHiRange.value = font.wdthHi; hbWdthHiNum.value = font.wdthHi;
@@ -1015,7 +1176,7 @@ wdthHiNum.addEventListener('change', () => {
 
 // ── Bar control event listeners ──────────────────────
 hbFsNum.addEventListener('change', () => {
-  const v = Math.max(+hbFsNum.min, Math.min(+hbFsNum.max, +hbFsNum.value || 0));
+  const v = Math.round(Math.max(+hbFsNum.min, Math.min(+hbFsNum.max, +hbFsNum.value || 0)));
   hbFsNum.value = v;
   fsNum.value = v; fsRange.value = v;
   resetColWidth();
@@ -1037,28 +1198,28 @@ hbRiversCb.addEventListener('change', () => {
 
 // Wdth drawer controls (mirror sidebar wdth listeners)
 hbWdthLoRange.addEventListener('input', () => {
-  const font = fontFor(detectLang(textarea.value.trim()));
+  const font = fontFor(detectLang(getSourceText()));
   font.wdthLo = Math.min(+hbWdthLoRange.value, font.wdthDefault);
   hbWdthLoRange.value = font.wdthLo; hbWdthLoNum.value = font.wdthLo;
   wdthLoRange.value = font.wdthLo; wdthLoNum.value = font.wdthLo;
   updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 });
 hbWdthHiRange.addEventListener('input', () => {
-  const font = fontFor(detectLang(textarea.value.trim()));
+  const font = fontFor(detectLang(getSourceText()));
   font.wdthHi = Math.max(+hbWdthHiRange.value, font.wdthDefault);
   hbWdthHiRange.value = font.wdthHi; hbWdthHiNum.value = font.wdthHi;
   wdthHiRange.value = font.wdthHi; wdthHiNum.value = font.wdthHi;
   updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 });
 hbWdthLoNum.addEventListener('change', () => {
-  const font = fontFor(detectLang(textarea.value.trim()));
+  const font = fontFor(detectLang(getSourceText()));
   font.wdthLo = Math.max(font.wdthMin, Math.min(Math.round(+hbWdthLoNum.value), font.wdthDefault));
   hbWdthLoNum.value = font.wdthLo; hbWdthLoRange.value = font.wdthLo;
   wdthLoNum.value = font.wdthLo; wdthLoRange.value = font.wdthLo;
   updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 });
 hbWdthHiNum.addEventListener('change', () => {
-  const font = fontFor(detectLang(textarea.value.trim()));
+  const font = fontFor(detectLang(getSourceText()));
   font.wdthHi = Math.min(font.wdthMax, Math.max(Math.round(+hbWdthHiNum.value), font.wdthDefault));
   hbWdthHiNum.value = font.wdthHi; hbWdthHiRange.value = font.wdthHi;
   wdthHiNum.value = font.wdthHi; wdthHiRange.value = font.wdthHi;
@@ -1068,7 +1229,7 @@ hbWdthHiNum.addEventListener('change', () => {
 // Allow clicking on the track to set the nearest endpoint
 function handleWdthTrackClick(e) {
   if (e.target.tagName === 'INPUT') return;
-  const font = fontFor(detectLang(textarea.value.trim()));
+  const font = fontFor(detectLang(getSourceText()));
   const rect = e.currentTarget.getBoundingClientRect();
   const frac = Math.max(0, Math.min(1, (e.clientX - rect.left - 7) / (rect.width - 14)));
   const val  = Math.round(font.wdthMin + frac * (font.wdthMax - font.wdthMin));
@@ -1084,23 +1245,7 @@ function handleWdthTrackClick(e) {
   updateWdthFill(font); updateHbWdthFill(font); scheduleWdthRender();
 }
 document.querySelector('#sidebar-wdth .range-dual-wrap').addEventListener('click', handleWdthTrackClick);
-document.querySelector('#wdth-drawer .range-dual-wrap').addEventListener('click', handleWdthTrackClick);
-
-// Wdth drawer toggle
-wdthDrawerBtn.addEventListener('click', e => {
-  e.stopPropagation();
-  const isOpen = wdthDrawerEl.classList.toggle('open');
-  wdthDrawerBtn.classList.toggle('open', isOpen);
-  wdthDrawerBtn.setAttribute('aria-expanded', String(isOpen));
-});
-document.addEventListener('click', e => {
-  if (!wdthDrawerEl.classList.contains('open')) return;
-  if (!wdthDrawerEl.contains(e.target) && !wdthDrawerBtn.contains(e.target)) {
-    wdthDrawerEl.classList.remove('open');
-    wdthDrawerBtn.classList.remove('open');
-    wdthDrawerBtn.setAttribute('aria-expanded', 'false');
-  }
-});
+get('hb-wdth-dual').addEventListener('click', handleWdthTrackClick);
 
 // ── Responsive column-width ceiling ──────────────────
 function colWidthMax() {
@@ -1153,10 +1298,9 @@ function resetColWidth() {
   colWidthInitialized = false;
   cwRange.value = cwRange.max; cwNum.value = cwRange.max;
 }
-get('btn-english').addEventListener('click', () => { textarea.value = ENGLISH; resetColWidth(); scheduleRender(); });
-get('btn-tamil').addEventListener('click',   () => { textarea.value = TAMIL;   resetColWidth(); scheduleRender(); });
-get('btn-arabic').addEventListener('click',  () => { textarea.value = ARABIC;  resetColWidth(); scheduleRender(); });
-textarea.addEventListener('input', scheduleRender);
+get('btn-english').addEventListener('click', () => { setSourceText(ENGLISH); resetColWidth(); scheduleRender(); });
+get('btn-tamil').addEventListener('click',   () => { setSourceText(TAMIL);   resetColWidth(); scheduleRender(); });
+get('btn-arabic').addEventListener('click',  () => { setSourceText(ARABIC);  resetColWidth(); scheduleRender(); });
 
 // ── Measurement ───────────────────────────────────────
 function fontVarSettings(font, wdth, sz) {
@@ -1330,6 +1474,8 @@ function renderSpaceHighlights(spacesByLine, lineH, naturalSpW) {
         rgba = `rgba(60,60,180,${alpha.toFixed(3)})`;
       }
       const d = document.createElement('div');
+      d.className = 'space-annot';
+      d.contentEditable = 'false';
       d.style.cssText =
         `position:absolute;pointer-events:none;` +
         `left:${sp.relLeft.toFixed(2)}px;top:${sp.relTop.toFixed(2)}px;` +
@@ -1355,6 +1501,8 @@ function renderRiverHighlights(spacesByLine, lineH) {
       for (const adj of nextLine) riverScore = Math.max(riverScore, jaccard(sp, adj));
       if (riverScore < 0.01) continue;
       const d = document.createElement('div');
+      d.className = 'space-annot';
+      d.contentEditable = 'false';
       d.style.cssText =
         `position:absolute;pointer-events:none;` +
         `left:${sp.relLeft.toFixed(2)}px;top:${sp.relTop.toFixed(2)}px;` +
@@ -1854,7 +2002,7 @@ try { _savedSession = JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch {
 
 function saveSession() {
   sessionStorage.setItem(SESSION_KEY, JSON.stringify({
-    text:      textarea.value,
+    text:      getSourceText(),
     fs:        +fsRange.value,
     cw:        +cwRange.value,
     highlight: highlightCb.checked,
@@ -1877,7 +2025,7 @@ function applySavedSession() {
   if (s.taWdthHi != null) taFont.wdthHi = clamp(s.taWdthHi, taFont.wdthDefault, taFont.wdthMax);
   if (s.arWdthLo != null) arFont.wdthLo = clamp(s.arWdthLo, arFont.wdthMin, arFont.wdthDefault);
   if (s.arWdthHi != null) arFont.wdthHi = clamp(s.arWdthHi, arFont.wdthDefault, arFont.wdthMax);
-  updateWdthUI(fontFor(detectLang(textarea.value.trim())));
+  updateWdthUI(fontFor(detectLang(getSourceText())));
 }
 
 // ── Render ────────────────────────────────────────────
@@ -1894,12 +2042,15 @@ function scheduleWdthRender() {
 
 async function render() {
   const myId = ++renderId;
-  const text = textarea.value.trim();
+  const text = getSourceText();
   const sz   = +fsRange.value;
   const colW = isMobile() ? mobileColW() : Math.min(+cwRange.value, colWidthMax());
 
   if (!fontsReady) { showPH('Loading fonts…'); return; }
-  if (!text)       { showPH('Enter text above, or choose a preset.'); return; }
+  if (!text) {
+    updateEmptyState();
+    return;
+  }
 
   const lang = detectLang(text);
   const font = fontFor(lang);
@@ -1911,54 +2062,50 @@ async function render() {
   colRegular.style.width  = `${colW}px`;
   colStretchy.style.width = `${colW}px`;
 
-  // Tamil uses separate DPs for the two columns so each can apply the correct
-  // font-stretch model for its river penalty.  Arabic and English share lines.
-  let normalLines = null, stretchyLines = null;
+  renderRegular(text, colW, sz, lang, font);
+
+  let stretchyLines;
   if (lang === 'ta') {
-    normalLines   = await layoutTamil(text, colW, sz, font);
-    if (renderId !== myId) return;
     stretchyLines = await layoutTamilStretchy(text, colW, sz, font);
     if (renderId !== myId) return;
   } else if (lang === 'ar') {
-    normalLines = stretchyLines = layoutArabic(text, colW, sz, font);
-  } else if (lang === 'en') {
-    normalLines = stretchyLines = await layoutEnglish(text, colW, sz, font);
+    stretchyLines = layoutArabic(text, colW, sz, font);
+  } else {
+    stretchyLines = await layoutEnglish(text, colW, sz, font);
     if (renderId !== myId) return;
   }
 
-  renderRegular(text, colW, sz, lang, font, normalLines);
   await renderStretchy(text, colW, sz, lang, font, stretchyLines, myId);
   if (renderId !== myId) return;
   updateColWidthMin();
 }
 
-function renderRegular(text, colW, sz, lang, font, precomputedLines) {
-  colRegular.innerHTML = '';
-
-  const isAr = lang === 'ar';
-  const lines = precomputedLines;
-  const frag = document.createDocumentFragment();
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i]) continue;
-    const el = document.createElement('div');
-    el.setAttribute('lang', lang);
-    const isLast = i === lines.length - 1;
-    el.style.cssText = [
-      `font-family:'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`,
-      `font-size:${sz}px`,
-      `line-height:1.45`,
-      `font-variation-settings:${fontVarSettings(font, font.wdthDefault, sz)}`,
-      isAr ? 'direction:rtl' : '',
-      `white-space:nowrap`,
-    ].filter(Boolean).join(';');
-    setLineContent(el, lines[i], colW, font, sz, font.wdthDefault, isLast);
-    frag.appendChild(el);
+function renderRegular(text, colW, sz, lang, font) {
+  removeAnnotations();
+  // Only replace textContent when not focused to avoid disrupting the cursor
+  if (document.activeElement !== colRegular) {
+    colRegular.textContent = text;
   }
-  colRegular.appendChild(frag);
+  applyEditableStyles(sz, lang, font, colW);
+  colRegular.classList.remove('is-empty');
+  colStretchy.classList.remove('is-empty');
+
   if (highlightSpaces || showRivers) {
     const naturalSpW = naturalSpaceWidth(font, sz);
-    addSpaceHighlightsForLines(Array.from(colRegular.querySelectorAll('[lang]')), naturalSpW, sz);
+    addSpaceHighlightsSingleDiv(colRegular, naturalSpW, sz);
   }
+}
+
+function applyEditableStyles(sz, lang, font, colW) {
+  const isAr = lang === 'ar';
+  colRegular.setAttribute('lang', lang);
+  colRegular.style.fontFamily            = `'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`;
+  colRegular.style.fontSize              = `${sz}px`;
+  colRegular.style.lineHeight            = '1.45';
+  colRegular.style.fontVariationSettings = fontVarSettings(font, font.wdthDefault, sz);
+  colRegular.style.direction             = isAr ? 'rtl' : 'ltr';
+  colRegular.style.textAlign             = isAr ? 'right' : 'justify';
+  if (colW) colRegular.style.width       = `${colW}px`;
 }
 
 async function renderStretchy(text, colW, sz, lang, font, precomputedLines, myId) {
@@ -2025,24 +2172,21 @@ async function renderStretchy(text, colW, sz, lang, font, precomputedLines, myId
 }
 
 function showPH(msg) {
-  colRegular.innerHTML  = `<p class="placeholder">${msg}</p>`;
-  colStretchy.innerHTML = '';
+  colStretchy.innerHTML = `<p class="placeholder">${msg}</p>`;
 }
 
 // ── Init ──────────────────────────────────────────────
-if (_savedSession) {
-  textarea.value = _savedSession.text ?? ENGLISH;
-  if (_savedSession.fs)  { fsRange.value = _savedSession.fs;  fsNum.value = _savedSession.fs;  hbFsNum.value = _savedSession.fs; }
-  highlightSpaces        = !!_savedSession.highlight;
+{
+  const initialText = _savedSession?.text ?? ENGLISH;
+  setSourceText(initialText);
+  if (_savedSession?.fs)  { fsRange.value = _savedSession.fs;  fsNum.value = _savedSession.fs;  hbFsNum.value = _savedSession.fs; }
+  highlightSpaces        = !!(_savedSession?.highlight ?? true);
   highlightCb.checked    = hbHighlightCb.checked = highlightSpaces;
-  showRivers             = !!_savedSession.rivers;
+  showRivers             = !!_savedSession?.rivers;
   riversCb.checked       = hbRiversCb.checked    = showRivers;
-  frenchSpacing          = !!_savedSession.french;
+  frenchSpacing          = !!_savedSession?.french;
   frenchCb.checked       = hbFrenchCb.checked     = frenchSpacing;
-  // Restore column width; skip the initial snap-to-min on first render
-  if (_savedSession.cw)  { cwRange.value = _savedSession.cw;  cwNum.value = _savedSession.cw;  colWidthInitialized = true; }
-} else {
-  textarea.value = ENGLISH;
+  if (_savedSession?.cw) { cwRange.value = _savedSession.cw;  cwNum.value = _savedSession.cw;  colWidthInitialized = true; }
 }
 loadBundledFonts();
 </script>
