@@ -1024,6 +1024,36 @@ function scrollContainerFor(col) {
   return isMobile() ? col.closest('.panel') : comparisonEl;
 }
 
+// ── Scroll lock ───────────────────────────────────────
+// After an edit the focused editable is rebuilt, and some browsers then scroll
+// its caret into view as a DEFERRED step (after our synchronous restore). The
+// lock re-asserts the intended scrollTop for a short window whenever the
+// container scrolls, and is released the moment the user scrolls themselves.
+let editScrollLock = null; // { scroller, top, until }
+function lockScroll(scroller, top) {
+  editScrollLock = { scroller, top, until: performance.now() + 200 };
+}
+function installScrollLock(scroller) {
+  if (!scroller || scroller.__lockInstalled) return;
+  scroller.__lockInstalled = true;
+  scroller.addEventListener('scroll', () => {
+    if (editScrollLock && editScrollLock.scroller === scroller
+        && performance.now() < editScrollLock.until
+        && Math.round(scroller.scrollTop) !== Math.round(editScrollLock.top)) {
+      scroller.scrollTop = editScrollLock.top;
+    }
+  });
+  // Any genuine user scroll releases the lock immediately.
+  const release = () => { if (editScrollLock && editScrollLock.scroller === scroller) editScrollLock = null; };
+  scroller.addEventListener('wheel', release, { passive: true });
+  scroller.addEventListener('touchmove', release, { passive: true });
+  scroller.addEventListener('keydown', e => {
+    if (['PageUp','PageDown','Home','End','ArrowUp','ArrowDown'].includes(e.key)) release();
+  });
+}
+installScrollLock(comparisonEl);
+document.querySelectorAll('.panel').forEach(installScrollLock);
+
 // Editing flattens the rendered model to plain text and rebuilds it on every
 // keystroke; the brief plain-text layout has a different height and can clamp
 // the scroll position. Capture the scroll before the flatten and restore it
@@ -2366,6 +2396,14 @@ async function render() {
     if (renderId !== myId) return;
   }
 
+  // Capture the edited column's scroll BEFORE rebuilding: clearing a focused
+  // column's innerHTML moves the caret to its start and the browser scrolls
+  // there, and the per-element caret restore can't undo a jump that already
+  // happened. We restore it after both columns are rebuilt.
+  const active = activeEditCol();
+  const scroller = active ? scrollContainerFor(active) : null;
+  const scrollBefore = scroller ? scroller.scrollTop : null;
+
   // The same editable model is rendered whether or not a column is focused, so
   // entering edit mode needs no flatten/re-render. Each column restores its own
   // caret only when it's the one being edited (getCaretCharOffset returns null
@@ -2375,11 +2413,17 @@ async function render() {
   renderEditModel(normalLines, colW, sz, lang, font, pending);
   renderStretchyEditModel(stretchyLines, colW, sz, lang, font, pending);
 
-  // Undo any scroll clamp caused by the transient plain-text flatten, then keep
-  // the caret visible in whichever column is being edited.
+  // Restore the scroll (undoing any jump from the rebuild or a plain-text
+  // flatten), then nudge the caret into view only if it's genuinely off-screen.
   restoreEditScroll();
-  const active = activeEditCol();
+  if (scroller && scrollBefore != null) scroller.scrollTop = scrollBefore;
   if (active) scrollCaretIntoView(active);
+  // Re-assert the scroll for a short window: some browsers scroll the caret of
+  // the just-rebuilt focused editable into view as a DEFERRED step (after this
+  // function returns), which the synchronous restore above can't catch. The
+  // scroll-lock listener snaps it back when that fires (and is released as soon
+  // as the user scrolls).
+  if (active && scroller) lockScroll(scroller, scroller.scrollTop);
 
   updateColWidthMin();
 }
