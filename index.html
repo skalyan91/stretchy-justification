@@ -941,19 +941,29 @@ function textLenSkipAnnot(root) {
   while (walker.nextNode()) len += walker.currentNode.textContent.length;
   return len;
 }
-function getCaretCharOffset(col) {
+// Character offset (skipping annotations/hyphens) of a DOM point within col.
+function offsetAtPoint(col, container, off) {
+  const pre = document.createRange();
+  pre.selectNodeContents(col);
+  pre.setEnd(container, off);
+  return textLenSkipAnnot(pre.cloneContents());
+}
+// The full selection as character offsets {start, end}, or null if not in col.
+function getSelectionOffsets(col) {
   const sel = window.getSelection();
   if (!sel || !sel.rangeCount) return null;
   const range = sel.getRangeAt(0);
-  if (!col.contains(range.startContainer)) return null;
-  const pre = document.createRange();
-  pre.selectNodeContents(col);
-  pre.setEnd(range.startContainer, range.startOffset);
-  return textLenSkipAnnot(pre.cloneContents());
+  if (!col.contains(range.startContainer) || !col.contains(range.endContainer)) return null;
+  return {
+    start: offsetAtPoint(col, range.startContainer, range.startOffset),
+    end:   offsetAtPoint(col, range.endContainer, range.endOffset),
+  };
 }
-function setCaretCharOffset(col, target) {
-  const sel = window.getSelection();
-  if (!sel) return;
+function getCaretCharOffset(col) {
+  return getSelectionOffsets(col)?.start ?? null;
+}
+// Locate the {node, offset} for a character offset within col.
+function nodeOffsetAt(col, target) {
   const walker = document.createTreeWalker(col, NodeFilter.SHOW_TEXT, {
     acceptNode: n => n.parentElement?.closest(CARET_SKIP)
       ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
@@ -962,20 +972,25 @@ function setCaretCharOffset(col, target) {
   while (walker.nextNode()) {
     const node = walker.currentNode;
     const len = node.textContent.length;
-    if (offset + len >= target) {
-      const r = document.createRange();
-      r.setStart(node, Math.max(0, target - offset));
-      r.collapse(true);
-      sel.removeAllRanges(); sel.addRange(r);
-      return;
-    }
+    if (offset + len >= target) return { node, offset: Math.max(0, target - offset) };
     offset += len; last = node;
   }
-  if (last) {
-    const r = document.createRange();
-    r.setStart(last, last.textContent.length); r.collapse(true);
-    sel.removeAllRanges(); sel.addRange(r);
-  }
+  return last ? { node: last, offset: last.textContent.length } : null;
+}
+// Restore a selection (or a collapsed caret when start === end) by char offsets.
+function setSelectionOffsets(col, start, end = start) {
+  const sel = window.getSelection();
+  if (!sel) return;
+  const a = nodeOffsetAt(col, start);
+  if (!a) return;
+  const b = end === start ? a : (nodeOffsetAt(col, end) || a);
+  const r = document.createRange();
+  r.setStart(a.node, a.offset);
+  r.setEnd(b.node, b.offset);
+  sel.removeAllRanges(); sel.addRange(r);
+}
+function setCaretCharOffset(col, target) {
+  setSelectionOffsets(col, target, target);
 }
 
 // The scroll container for a column (the whole comparison area on desktop, the
@@ -1026,15 +1041,17 @@ function scrollCaretIntoView(col) {
 }
 
 // Flatten a column's rendered edit model into a single plain-text node holding
-// the canonical source text, preserving the caret. All editing mutations happen
-// on this plain-text layer (so spaces/caret/IME behave natively); the rich model
-// is re-rendered after each edit.
+// the canonical source text, preserving the FULL selection (so select-all +
+// delete, or select + replace, operate on the real selection rather than a
+// collapsed caret). All editing mutations happen on this plain-text layer (so
+// spaces/caret/IME behave natively); the rich model is re-rendered after each
+// edit.
 function flattenToPlain(col) {
   if (col.classList.contains('is-empty')) return;
   if (col.childNodes.length === 1 && col.firstChild?.nodeType === Node.TEXT_NODE) return;
-  const caret = getCaretCharOffset(col);
+  const offsets = getSelectionOffsets(col);
   col.textContent = sourceText;
-  if (caret != null) setCaretCharOffset(col, caret);
+  if (offsets) setSelectionOffsets(col, offsets.start, offsets.end);
 }
 
 // The column currently being edited, or null.
@@ -1082,11 +1099,9 @@ function attachEditing(col) {
     render();
   });
   col.addEventListener('blur', () => {
-    sourceText = (sourceText || '').replace(/\s+/g, ' ').trim();
-    updateEmptyState();
-    clearTimeout(renderTimer);
+    // Don't normalise/trim here — preserve the text exactly as typed (including
+    // trailing spaces). The model is already current, so no re-render is needed.
     saveSession();
-    render();
   });
   col.addEventListener('paste', e => {
     e.preventDefault();
