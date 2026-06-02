@@ -995,16 +995,24 @@ function nodeOffsetAt(col, target) {
   return last ? { node: last, offset: last.textContent.length } : null;
 }
 // Restore a selection (or a collapsed caret when start === end) by char offsets.
+// Selecting a range makes the browser scroll it into view; since we re-set the
+// selection on every flatten and model rebuild, that would fight the scroll
+// position. So this is scroll-NEUTRAL — it restores the scroll container after
+// setting the selection. Intentional scrolling is done separately via
+// scrollCaretIntoView().
 function setSelectionOffsets(col, start, end = start) {
   const sel = window.getSelection();
   if (!sel) return;
   const a = nodeOffsetAt(col, start);
   if (!a) return;
   const b = end === start ? a : (nodeOffsetAt(col, end) || a);
+  const container = scrollContainerFor(col);
+  const savedTop = container ? container.scrollTop : null;
   const r = document.createRange();
   r.setStart(a.node, a.offset);
   r.setEnd(b.node, b.offset);
   sel.removeAllRanges(); sel.addRange(r);
+  if (container && savedTop != null) container.scrollTop = savedTop;
 }
 function setCaretCharOffset(col, target) {
   setSelectionOffsets(col, target, target);
@@ -1077,6 +1085,23 @@ function activeEditCol() {
     : (document.activeElement === colStretchy) ? colStretchy : null;
 }
 
+// Place the caret at the end of a rendered line's visible text (skipping the
+// hyphenation hyphen, the zero-size boundary space, and annotation overlays).
+function placeCaretAtLineEnd(col, line) {
+  const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.parentElement?.closest('.space-annot, .hyphen, .bsp')
+      ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+  });
+  let last = null;
+  while (walker.nextNode()) last = walker.currentNode;
+  if (!last) return;
+  const sel = window.getSelection();
+  const r = document.createRange();
+  r.setStart(last, last.textContent.length);
+  r.collapse(true);
+  sel.removeAllRanges(); sel.addRange(r);
+}
+
 let composingText = false;
 function readPlainEdit(col) {
   // col is the plain-text edit layer here. Only normalise newlines to spaces —
@@ -1097,6 +1122,25 @@ function readPlainEdit(col) {
 // handler. The scroll position is captured before the flatten and restored
 // after the rebuild so the view doesn't jump.
 function attachEditing(col) {
+  // A click in the right-hand gutter (on/around the wdth label in the Stretchy
+  // column, or past a line's text) should drop the caret at the END of that
+  // line, not vanish into the non-editable margin number.
+  col.addEventListener('mousedown', e => {
+    const lineSel = col === colStretchy ? '.line' : '[lang]';
+    if (e.target.closest(lineSel)) return; // clicked on the text — let the browser handle it
+    const row = e.target.closest('.lw');
+    let line = row ? row.querySelector('.line') : null;
+    if (!line) {
+      line = [...col.querySelectorAll(lineSel)].find(l => {
+        const b = l.getBoundingClientRect();
+        return e.clientY >= b.top && e.clientY <= b.bottom;
+      });
+    }
+    if (!line) return;
+    e.preventDefault();
+    if (document.activeElement !== col) col.focus();
+    placeCaretAtLineEnd(col, line);
+  });
   col.addEventListener('compositionstart', () => { composingText = true; captureEditScroll(); flattenToPlain(col); });
   col.addEventListener('beforeinput', e => { if (!e.isComposing) { captureEditScroll(); flattenToPlain(col); } });
   col.addEventListener('input', () => {
