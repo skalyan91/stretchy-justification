@@ -926,6 +926,8 @@ function setEmptyState(empty) {
     const colW = isMobile() ? mobileColW() : Math.min(+cwRange.value || 400, colWidthMax());
     for (const col of [colRegular, colStretchy]) {
       col.innerHTML = '';
+      col.__lineKeys = [];        // reconcile state is stale once the column is cleared
+      col.__mode = null;          // force a full rebuild on the next non-empty render
       col.style.fontSize = fsPx;
       col.style.lineHeight = '1.45';
       col.style.width = col.style.width || `${colW}px`;
@@ -1106,6 +1108,8 @@ function flattenToPlain(col) {
   if (col.childNodes.length === 1 && col.firstChild?.nodeType === Node.TEXT_NODE) return;
   const offsets = getSelectionOffsets(col);
   col.textContent = sourceText;
+  col.__mode = null;          // the rendered rows are gone; force a full rebuild next render
+  col.__lineKeys = [];
   if (offsets) setSelectionOffsets(col, offsets.start, offsets.end);
 }
 
@@ -2402,21 +2406,14 @@ async function render() {
     if (renderId !== myId) return;
   }
 
-  // Capture the edited column's scroll BEFORE rebuilding: clearing a focused
-  // column's innerHTML moves the caret to its start and the browser scrolls
-  // there, and the per-element caret restore can't undo a jump that already
-  // happened. We restore it after both columns are rebuilt.
+  // Capture the edited column's scroll before reconciling, as a safety net. With
+  // minimal DOM updates the common prefix/suffix rows are never removed, so the
+  // browser keeps the scroll anchored to them and the caret never jumps to the
+  // top — no blur/refocus dance is needed. We still restore scrollTop in case a
+  // changed row above the viewport altered the column's height.
   const active = activeEditCol();
   const scroller = active ? scrollContainerFor(active) : null;
   const scrollBefore = scroller ? scroller.scrollTop : null;
-  const caretOffset = active ? (pending && pending.col === active ? pending.offset : getCaretCharOffset(active)) : null;
-
-  // Blur the focused column during the rebuild so the browser doesn't schedule a
-  // "scroll the caret into view" for the rebuilt editable (the deferred jump).
-  // We refocus without scrolling and re-place the caret afterward. Skipped on
-  // mobile, where blur/focus would disturb the virtual keyboard.
-  const refocus = active && !isMobile() && document.activeElement === active;
-  if (refocus) active.blur();
 
   // The same editable model is rendered whether or not a column is focused, so
   // entering edit mode needs no flatten/re-render. Each column restores its own
@@ -2426,11 +2423,6 @@ async function render() {
   applyEditableStyles(colStretchy, sz, lang, font, colW);
   renderEditModel(normalLines, colW, sz, lang, font, pending);
   renderStretchyEditModel(stretchyLines, colW, sz, lang, font, pending);
-
-  if (refocus) {
-    active.focus({ preventScroll: true });
-    if (caretOffset != null) setCaretCharOffset(active, caretOffset);
-  }
 
   // Restore the scroll, then nudge the caret into view only if it's genuinely
   // off-screen. The short-lived scroll lock catches any residual deferred scroll
@@ -2510,20 +2502,88 @@ function appendLineBoundary(el, info, isLast, tail, spW) {
   }
 }
 
+// A per-line identity key: within a stable render mode, two lines with equal
+// keys render to byte-identical DOM, so an unchanged row can be reused across an
+// edit instead of rebuilt. Captures everything that varies per line (its source
+// text, whether a hyphenation hyphen is appended, and its boundary/trailing
+// kind). The wdth annotation in the Stretchy column is a deterministic function
+// of the source text and the render mode, so it needs no separate key.
+function lineKey(info, isLast, tail) {
+  return info.src + '' +
+    (info.addedHyphen ? 'H' : '') + '' +
+    (isLast ? 'L' + (tail || '') : (info.boundarySpace ? 'B' : ''));
+}
+
+// Identity of the render mode: when any of these change, every line's geometry
+// (and thus its DOM) changes, so we rebuild the whole column rather than diff.
+function renderModeKey(sz, colW, lang, font) {
+  return [sz, colW, lang, font.family, font.wdthDefault, font.wdthLo, font.wdthHi,
+    highlightSpaces, showRivers, frenchSpacing].join('|');
+}
+
+// Update `container`'s line rows to match `newKeys` with minimal DOM churn: keep
+// the common prefix and suffix rows (so the browser leaves them — and the scroll
+// anchored to them — untouched, with no repaint) and rebuild only the changed
+// middle. Falls back to a full rebuild when the render mode changed. Returns the
+// freshly built rows (the prefix/suffix are reused in place).
+function reconcileOrRebuild(container, mode, newKeys, buildRow) {
+  // Desync guard: if the DOM was mutated outside this function (the IME /
+  // rare-inputType flatten path replaces the column with one flat text node),
+  // the recorded keys no longer describe the children — rebuild from scratch.
+  const oldLen = (container.__lineKeys || []).length;
+  if (container.__mode !== mode || container.children.length !== oldLen) {
+    container.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    const rows = [];
+    for (let i = 0; i < newKeys.length; i++) { const r = buildRow(i); rows.push(r); frag.appendChild(r); }
+    container.appendChild(frag);
+    container.__mode = mode;
+    container.__lineKeys = newKeys;
+    return rows;
+  }
+  const oldKeys = container.__lineKeys || [];
+  const n = newKeys.length, m = oldKeys.length;
+  let p = 0;                                   // length of the common prefix
+  while (p < n && p < m && newKeys[p] === oldKeys[p]) p++;
+  let s = 0;                                   // length of the common suffix
+  while (s < n - p && s < m - p && newKeys[n - 1 - s] === oldKeys[m - 1 - s]) s++;
+  // Remove the old changed middle [p, m-s), high index first so indices stay valid.
+  for (let i = m - s - 1; i >= p; i--) { const c = container.children[i]; if (c) c.remove(); }
+  // After removal the first suffix row sits at index p — insert the new middle there.
+  const refNode = container.children[p] || null;
+  const frag = document.createDocumentFragment();
+  const rows = [];
+  for (let i = p; i < n - s; i++) { const r = buildRow(i); rows.push(r); frag.appendChild(r); }
+  container.insertBefore(frag, refNode);
+  container.__lineKeys = newKeys;
+  return rows;
+}
+
+// Recompute the space/river highlight overlays for a column. Overlays are
+// absolutely positioned (no layout/scroll effect), but rivers depend on adjacent
+// lines, so we clear and recompute across ALL rows rather than only changed ones.
+function refreshHighlights(col, lineSel, font, sz) {
+  if (!(highlightSpaces || showRivers)) return;
+  col.querySelectorAll('.space-annot').forEach(d => d.remove());
+  addSpaceHighlightsForLines(Array.from(col.querySelectorAll(lineSel)), naturalSpaceWidth(font, sz), sz);
+}
+
 // Render the Regular live edit model from the SAME lines the rested view uses:
 // the exact doubled-spacing justified layout (final line unjustified but still
 // doubling sentence spaces), at the font's default width. Restores the caret.
 function renderEditModel(lines, colW, sz, lang, font, pending) {
   const caret = (pending && pending.col === colRegular) ? pending.offset : getCaretCharOffset(colRegular);
-  colRegular.innerHTML = '';
 
   const { infos, tail } = reconstructLineSources(lines, sourceText);
   const isAr = lang === 'ar';
   const hyphenW = measure('-', font.wdthDefault, sz, font);
-  const frag = document.createDocumentFragment();
-  for (let i = 0; i < infos.length; i++) {
+  const spW = naturalSpaceWidthAt(font.wdthDefault, sz, font);
+  const last = infos.length - 1;
+  const newKeys = infos.map((info, i) => lineKey(info, i === last, tail));
+
+  const buildRow = (i) => {
     const info = infos[i];
-    const isLast = i === infos.length - 1;
+    const isLast = i === last;
     const el = document.createElement('div');
     el.setAttribute('lang', lang);
     el.style.cssText = [
@@ -2538,17 +2598,14 @@ function renderEditModel(lines, colW, sz, lang, font, pending) {
     // a hyphenation hyphen will be appended, so the line still totals colW). The
     // space widths come out identical to the rested render.
     setLineContent(el, info.src, colW - (info.addedHyphen ? hyphenW : 0), font, sz, font.wdthDefault, isLast);
-    appendLineBoundary(el, info, isLast, tail, naturalSpaceWidthAt(font.wdthDefault, sz, font));
-    frag.appendChild(el);
-  }
-  colRegular.appendChild(frag);
+    appendLineBoundary(el, info, isLast, tail, spW);
+    return el;
+  };
+
+  reconcileOrRebuild(colRegular, renderModeKey(sz, colW, lang, font), newKeys, buildRow);
 
   if (caret != null) setCaretCharOffset(colRegular, caret);
-
-  if (highlightSpaces || showRivers) {
-    const naturalSpW = naturalSpaceWidth(font, sz);
-    addSpaceHighlightsForLines(Array.from(colRegular.querySelectorAll('[lang]')), naturalSpW, sz);
-  }
+  refreshHighlights(colRegular, '[lang]', font, sz);
 }
 
 // Render the Stretchy live edit model: the same per-line wdth justification as
@@ -2556,14 +2613,15 @@ function renderEditModel(lines, colW, sz, lang, font, pending) {
 // the rested stretchy lines so nothing jumps. Restores the caret.
 function renderStretchyEditModel(lines, colW, sz, lang, font, pending) {
   const caret = (pending && pending.col === colStretchy) ? pending.offset : getCaretCharOffset(colStretchy);
-  colStretchy.innerHTML = '';
 
   const { infos, tail } = reconstructLineSources(lines, sourceText);
   const isAr = lang === 'ar';
-  const frag = document.createDocumentFragment();
-  for (let i = 0; i < infos.length; i++) {
+  const last = infos.length - 1;
+  const newKeys = infos.map((info, i) => lineKey(info, i === last, tail));
+
+  const buildRow = (i) => {
     const info = infos[i];
-    const isLast = i === infos.length - 1;
+    const isLast = i === last;
     const lineText = lines[i] || '';
 
     let wdthVal = font.wdthDefault, cl = null;
@@ -2600,16 +2658,13 @@ function renderStretchyEditModel(lines, colW, sz, lang, font, pending) {
       :                                 wdthVal.toFixed(1);
 
     wrapper.append(el, annot);
-    frag.appendChild(wrapper);
-  }
-  colStretchy.appendChild(frag);
+    return wrapper;
+  };
+
+  reconcileOrRebuild(colStretchy, renderModeKey(sz, colW, lang, font), newKeys, buildRow);
 
   if (caret != null) setCaretCharOffset(colStretchy, caret);
-
-  if (highlightSpaces || showRivers) {
-    const naturalSpW = naturalSpaceWidth(font, sz);
-    addSpaceHighlightsForLines(Array.from(colStretchy.querySelectorAll('.line')), naturalSpW, sz);
-  }
+  refreshHighlights(colStretchy, '.line', font, sz);
 }
 
 function applyEditableStyles(col, sz, lang, font, colW) {
