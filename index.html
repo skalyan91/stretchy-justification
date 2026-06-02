@@ -2511,7 +2511,8 @@ function appendLineBoundary(el, info, isLast, tail, spW) {
 function lineKey(info, isLast, tail) {
   return info.src + '' +
     (info.addedHyphen ? 'H' : '') + '' +
-    (isLast ? 'L' + (tail || '') : (info.boundarySpace ? 'B' : ''));
+    (info.boundarySpace ? 'B' : '') + '' +
+    (isLast ? 'L' + (tail || '') : '');
 }
 
 // Identity of the render mode: when any of these change, every line's geometry
