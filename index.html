@@ -922,10 +922,6 @@ function setEmptyState(empty) {
   }
 }
 
-function removeAnnotations(col = colRegular) {
-  col.querySelectorAll('.space-annot').forEach(d => d.remove());
-}
-
 // ── Caret ↔ source-offset mapping ─────────────────────
 // Both the plain-text edit layer and the rendered edit model have a text
 // content that equals the source text exactly — boundary spaces between lines
@@ -982,6 +978,28 @@ function setCaretCharOffset(col, target) {
   }
 }
 
+// The scroll container for a column (the whole comparison area on desktop, the
+// individual panel on mobile).
+function scrollContainerFor(col) {
+  return isMobile() ? col.closest('.panel') : comparisonEl;
+}
+
+// Editing flattens the rendered model to plain text and rebuilds it on every
+// keystroke; the brief plain-text layout has a different height and can clamp
+// the scroll position. Capture the scroll before the flatten and restore it
+// after the rebuild so the view stays put (scrollCaretIntoView then nudges only
+// if the caret has actually gone off-screen).
+let savedEditScroll = null;
+function captureEditScroll() {
+  const col = activeEditCol();
+  if (!col) { savedEditScroll = null; return; }
+  const container = scrollContainerFor(col);
+  savedEditScroll = container ? { container, top: container.scrollTop } : null;
+}
+function restoreEditScroll() {
+  if (savedEditScroll) { savedEditScroll.container.scrollTop = savedEditScroll.top; savedEditScroll = null; }
+}
+
 // Keep the caret visible by scrolling its column's scroll container minimally.
 function scrollCaretIntoView(col) {
   const sel = window.getSelection();
@@ -996,7 +1014,7 @@ function scrollCaretIntoView(col) {
     rect = host?.getBoundingClientRect();
   }
   if (!rect) return;
-  const container = isMobile() ? col.closest('.panel') : comparisonEl;
+  const container = scrollContainerFor(col);
   if (!container) return;
   const c = container.getBoundingClientRect();
   const margin = 28;
@@ -1036,20 +1054,17 @@ function readPlainEdit(col) {
 
 // Wire up live editing for an editable column (Regular or Stretchy). Both edit
 // the same canonical sourceText and re-render both columns on every change.
+//
+// The rendered model is identical whether focused or not (the editable
+// structure is rendered always), so entering edit mode needs no flattening or
+// re-render — a click simply places the caret in the model. Mutations DO need a
+// clean plain-text layer (so spaces/caret/IME behave natively), so we flatten
+// just before each input/composition and rebuild the model in the input
+// handler. The scroll position is captured before the flatten and restored
+// after the rebuild so the view doesn't jump.
 function attachEditing(col) {
-  // Only flatten when ENTERING edit mode (not yet focused). While already
-  // editing, a click just repositions the caret within the rendered model — the
-  // model's caret mapping handles it, so we must not flatten (which would strip
-  // the annotations and hyphenation until the next keystroke).
-  col.addEventListener('mousedown', () => { if (document.activeElement !== col) flattenToPlain(col); });
-  col.addEventListener('touchstart', () => { if (document.activeElement !== col) flattenToPlain(col); }, { passive: true });
-  col.addEventListener('compositionstart', () => { composingText = true; flattenToPlain(col); });
-  col.addEventListener('beforeinput', e => { if (!e.isComposing) flattenToPlain(col); });
-  col.addEventListener('focus', () => {
-    flattenToPlain(col);
-    clearTimeout(renderTimer);
-    render();
-  });
+  col.addEventListener('compositionstart', () => { composingText = true; captureEditScroll(); flattenToPlain(col); });
+  col.addEventListener('beforeinput', e => { if (!e.isComposing) { captureEditScroll(); flattenToPlain(col); } });
   col.addEventListener('input', () => {
     sourceText = readPlainEdit(col);
     if (composingText) { updateEmptyState(); saveSession(); return; }
@@ -2161,6 +2176,8 @@ async function render() {
   if (renderId !== myId) return;
 
   updateWdthUI(font);
+  colRegular.classList.remove('is-empty');
+  colStretchy.classList.remove('is-empty');
   colRegular.style.width  = `${colW}px`;
   colStretchy.style.width = `${colW}px`;
 
@@ -2177,54 +2194,22 @@ async function render() {
     if (renderId !== myId) return;
   }
 
-  renderRegular(text, colW, sz, lang, font, normalLines);
-
-  await renderStretchy(text, colW, sz, lang, font, stretchyLines, myId);
-  if (renderId !== myId) return;
-  updateColWidthMin();
-}
-
-function renderRegular(text, colW, sz, lang, font, lines) {
-  colRegular.classList.remove('is-empty');
-  colStretchy.classList.remove('is-empty');
+  // The same editable model is rendered whether or not a column is focused, so
+  // entering edit mode needs no flatten/re-render. Each column restores its own
+  // caret only when it's the one being edited (getCaretCharOffset returns null
+  // otherwise).
   applyEditableStyles(colRegular, sz, lang, font, colW);
+  applyEditableStyles(colStretchy, sz, lang, font, colW);
+  renderEditModel(normalLines, colW, sz, lang, font);
+  renderStretchyEditModel(stretchyLines, colW, sz, lang, font);
 
-  if (document.activeElement === colRegular) {
-    // While editing, render the exact doubled-spacing justified model live
-    // (including the unjustified final line), reusing the SAME line breaks as
-    // the rested view so nothing jumps. Editing mutations happen on a flattened
-    // plain-text layer via flattenToPlain(); here we rebuild from sourceText and
-    // restore the caret.
-    renderEditModel(lines, colW, sz, lang, font);
-    return;
-  }
+  // Undo any scroll clamp caused by the transient plain-text flatten, then keep
+  // the caret visible in whichever column is being edited.
+  restoreEditScroll();
+  const active = activeEditCol();
+  if (active) scrollCaretIntoView(active);
 
-  removeAnnotations();
-  colRegular.innerHTML = '';
-
-  const isAr = lang === 'ar';
-  const frag = document.createDocumentFragment();
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i]) continue;
-    const el = document.createElement('div');
-    el.setAttribute('lang', lang);
-    el.style.cssText = [
-      `font-family:'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`,
-      `font-size:${sz}px`,
-      `line-height:1.45`,
-      `font-variation-settings:${fontVarSettings(font, font.wdthDefault, sz)}`,
-      isAr ? 'direction:rtl' : '',
-      'white-space:nowrap',
-    ].filter(Boolean).join(';');
-    setLineContent(el, lines[i], colW, font, sz, font.wdthDefault, i === lines.length - 1);
-    frag.appendChild(el);
-  }
-  colRegular.appendChild(frag);
-
-  if (highlightSpaces || showRivers) {
-    const naturalSpW = naturalSpaceWidth(font, sz);
-    addSpaceHighlightsForLines(Array.from(colRegular.querySelectorAll('[lang]')), naturalSpW, sz);
-  }
+  updateColWidthMin();
 }
 
 // Map each rendered line string back onto the canonical source text by matching
@@ -2316,7 +2301,6 @@ function renderEditModel(lines, colW, sz, lang, font) {
   colRegular.appendChild(frag);
 
   if (caret != null) setCaretCharOffset(colRegular, caret);
-  scrollCaretIntoView(colRegular);
 
   if (highlightSpaces || showRivers) {
     const naturalSpW = naturalSpaceWidth(font, sz);
@@ -2377,7 +2361,6 @@ function renderStretchyEditModel(lines, colW, sz, lang, font) {
   colStretchy.appendChild(frag);
 
   if (caret != null) setCaretCharOffset(colStretchy, caret);
-  scrollCaretIntoView(colStretchy);
 
   if (highlightSpaces || showRivers) {
     const naturalSpW = naturalSpaceWidth(font, sz);
@@ -2397,79 +2380,6 @@ function applyEditableStyles(col, sz, lang, font, colW) {
   // divs use white-space:nowrap, so this container value doesn't affect them.
   col.style.textAlign             = 'justify';
   if (colW) col.style.width       = `${colW}px`;
-}
-
-async function renderStretchy(text, colW, sz, lang, font, precomputedLines, myId) {
-  let lines;
-  try {
-    lines = precomputedLines ?? await layoutEnglish(text, colW, sz, font);
-  } catch (err) {
-    colStretchy.innerHTML = `<p style="color:var(--err);font-size:13px">Layout error: ${err.message}</p>`;
-    return;
-  }
-  if (renderId !== myId) return;
-
-  colRegular.classList.remove('is-empty');
-  colStretchy.classList.remove('is-empty');
-
-  if (document.activeElement === colStretchy) {
-    // The Stretchy column is being edited: render its editable per-line-wdth
-    // model live, reusing the rested stretchy lines so nothing jumps.
-    applyEditableStyles(colStretchy, sz, lang, font, colW);
-    renderStretchyEditModel(lines, colW, sz, lang, font);
-    return;
-  }
-
-  colStretchy.innerHTML = '';
-  const isAr = lang === 'ar';
-  const frag = document.createDocumentFragment();
-
-  for (let i = 0; i < lines.length; i++) {
-    const lineText = lines[i];
-    if (!lineText) continue;
-
-    const isLast = (i === lines.length - 1);
-    let wdthVal = font.wdthDefault, cl = null;
-    if (!isLast) {
-      // Reduce the wdth target by the extra width that sentence spaces will contribute,
-      // so font-width finding treats sentence spacing as part of the line budget.
-      const nSentW = frenchSpacing ? 0
-        : lineText.split(' ').slice(0, -1).filter(wordEndsSentence).length
-          * naturalSpaceWidth(font, sz);
-      ({ v: wdthVal, cl } = stretchyWdth(lineText, colW - nSentW, sz, font));
-    }
-
-    const wrapper = document.createElement('div');
-    wrapper.className = isAr ? 'lw rtl' : 'lw';
-
-    const el = document.createElement('div');
-    el.className = 'line';
-    el.style.cssText = [
-      `font-family:'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`,
-      `font-size:${sz}px`,
-      `line-height:1.45`,
-      `font-variation-settings:${fontVarSettings(font, wdthVal, sz)}`,
-      isAr ? 'direction:rtl' : '',
-      `white-space:nowrap`,
-    ].filter(Boolean).join(';');
-    setLineContent(el, lineText, colW, font, sz, wdthVal, isLast);
-
-    const annot = document.createElement('span');
-    annot.className = 'annot' + (cl ? ' cl' : '');
-    annot.textContent = isLast        ? `${font.wdthDefault}↵`
-      : cl === 'max'                  ? `${font.wdthHi}↑`
-      : cl === 'min'                  ? `${font.wdthLo}↓`
-      :                                 wdthVal.toFixed(1);
-
-    wrapper.append(el, annot);
-    frag.appendChild(wrapper);
-  }
-
-  colStretchy.appendChild(frag);
-  if (highlightSpaces || showRivers) {
-    const naturalSpW = naturalSpaceWidth(font, sz);
-    addSpaceHighlightsForLines(Array.from(colStretchy.querySelectorAll('.line')), naturalSpW, sz);
-  }
 }
 
 function showPH(msg) {
