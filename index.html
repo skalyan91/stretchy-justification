@@ -1087,6 +1087,7 @@ function activeEditCol() {
 
 // Place the caret at the end of a rendered line's visible text (skipping the
 // hyphenation hyphen, the zero-size boundary space, and annotation overlays).
+// Scroll-neutral: never moves the viewport.
 function placeCaretAtLineEnd(col, line) {
   const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT, {
     acceptNode: n => n.parentElement?.closest('.space-annot, .hyphen, .bsp')
@@ -1095,11 +1096,37 @@ function placeCaretAtLineEnd(col, line) {
   let last = null;
   while (walker.nextNode()) last = walker.currentNode;
   if (!last) return;
+  const container = scrollContainerFor(col);
+  const savedTop = container ? container.scrollTop : null;
   const sel = window.getSelection();
   const r = document.createRange();
   r.setStart(last, last.textContent.length);
   r.collapse(true);
   sel.removeAllRanges(); sel.addRange(r);
+  if (container && savedTop != null) container.scrollTop = savedTop;
+}
+
+// The rendered line whose row best matches a click's vertical position — the
+// line containing clientY, else the nearest line above/below.
+function lineAtClientY(col, clientY) {
+  const lineSel = col === colStretchy ? '.line' : '[lang]';
+  const lines = [...col.querySelectorAll(lineSel)];
+  if (!lines.length) return null;
+  const within = lines.find(l => {
+    const b = l.getBoundingClientRect();
+    return clientY >= b.top && clientY <= b.bottom;
+  });
+  if (within) return within;
+  if (clientY < lines[0].getBoundingClientRect().top) return lines[0];
+  if (clientY > lines[lines.length - 1].getBoundingClientRect().bottom) return lines[lines.length - 1];
+  // In a gap between lines: pick the closest.
+  let best = lines[0], bestD = Infinity;
+  for (const l of lines) {
+    const b = l.getBoundingClientRect();
+    const d = Math.min(Math.abs(clientY - b.top), Math.abs(clientY - b.bottom));
+    if (d < bestD) { bestD = d; best = l; }
+  }
+  return best;
 }
 
 let composingText = false;
@@ -1122,20 +1149,17 @@ function readPlainEdit(col) {
 // handler. The scroll position is captured before the flatten and restored
 // after the rebuild so the view doesn't jump.
 function attachEditing(col) {
-  // A click in the right-hand gutter (on/around the wdth label in the Stretchy
-  // column, or past a line's text) should drop the caret at the END of that
-  // line, not vanish into the non-editable margin number.
-  col.addEventListener('mousedown', e => {
+  // A click that misses the line text — in the right-hand gutter (on/around the
+  // wdth label in the Stretchy column), or below the last line — should drop the
+  // caret at the END of the nearest line, not vanish into the margin number or do
+  // nothing. Attached to the whole panel so clicks in the empty area below the
+  // text (outside the column box) are handled too. Never scrolls.
+  const panel = col.closest('.panel') || col;
+  panel.addEventListener('mousedown', e => {
+    if (e.target.closest('.panel-label')) return;
     const lineSel = col === colStretchy ? '.line' : '[lang]';
     if (e.target.closest(lineSel)) return; // clicked on the text — let the browser handle it
-    const row = e.target.closest('.lw');
-    let line = row ? row.querySelector('.line') : null;
-    if (!line) {
-      line = [...col.querySelectorAll(lineSel)].find(l => {
-        const b = l.getBoundingClientRect();
-        return e.clientY >= b.top && e.clientY <= b.bottom;
-      });
-    }
+    const line = lineAtClientY(col, e.clientY);
     if (!line) return;
     e.preventDefault();
     if (document.activeElement !== col) col.focus();
@@ -1146,6 +1170,11 @@ function attachEditing(col) {
   col.addEventListener('input', () => {
     sourceText = readPlainEdit(col);
     if (composingText) { updateEmptyState(); saveSession(); return; }
+    // Undo the browser's auto-scroll-to-caret SYNCHRONOUSLY here (before paint
+    // and before the next keystroke), so the view doesn't flicker and a fast
+    // next keystroke can't capture an already-jumped scroll position. render()
+    // then re-renders the model and nudges the caret into view if needed.
+    restoreEditScroll();
     updateEmptyState();
     clearTimeout(renderTimer);
     saveSession();
