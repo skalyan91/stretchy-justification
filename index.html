@@ -1246,8 +1246,14 @@ function attachEditing(col) {
     const line = lineAtClientY(col, e.clientY);
     if (!line) return;
     e.preventDefault();
-    if (document.activeElement !== col) col.focus();
+    // Fully scroll-neutral: focus({preventScroll}) (a plain focus() scrolls the
+    // large editable into view, jumping to the top) and restore around the
+    // caret placement.
+    const scroller = scrollContainerFor(col);
+    const top = scroller ? scroller.scrollTop : null;
+    if (document.activeElement !== col) col.focus({ preventScroll: true });
     placeCaretAtLineEnd(col, line);
+    if (scroller && top != null) scroller.scrollTop = top;
   });
   // IME composition needs a real plain-text layer (the model's spans interfere
   // with composition), so for composition we still flatten to plain text and read
@@ -2403,6 +2409,14 @@ async function render() {
   const active = activeEditCol();
   const scroller = active ? scrollContainerFor(active) : null;
   const scrollBefore = scroller ? scroller.scrollTop : null;
+  const caretOffset = active ? (pending && pending.col === active ? pending.offset : getCaretCharOffset(active)) : null;
+
+  // Blur the focused column during the rebuild so the browser doesn't schedule a
+  // "scroll the caret into view" for the rebuilt editable (the deferred jump).
+  // We refocus without scrolling and re-place the caret afterward. Skipped on
+  // mobile, where blur/focus would disturb the virtual keyboard.
+  const refocus = active && !isMobile() && document.activeElement === active;
+  if (refocus) active.blur();
 
   // The same editable model is rendered whether or not a column is focused, so
   // entering edit mode needs no flatten/re-render. Each column restores its own
@@ -2413,16 +2427,17 @@ async function render() {
   renderEditModel(normalLines, colW, sz, lang, font, pending);
   renderStretchyEditModel(stretchyLines, colW, sz, lang, font, pending);
 
-  // Restore the scroll (undoing any jump from the rebuild or a plain-text
-  // flatten), then nudge the caret into view only if it's genuinely off-screen.
+  if (refocus) {
+    active.focus({ preventScroll: true });
+    if (caretOffset != null) setCaretCharOffset(active, caretOffset);
+  }
+
+  // Restore the scroll, then nudge the caret into view only if it's genuinely
+  // off-screen. The short-lived scroll lock catches any residual deferred scroll
+  // and is released the moment the user scrolls.
   restoreEditScroll();
   if (scroller && scrollBefore != null) scroller.scrollTop = scrollBefore;
   if (active) scrollCaretIntoView(active);
-  // Re-assert the scroll for a short window: some browsers scroll the caret of
-  // the just-rebuilt focused editable into view as a DEFERRED step (after this
-  // function returns), which the synchronous restore above can't catch. The
-  // scroll-lock listener snaps it back when that fires (and is released as soon
-  // as the user scrolls).
   if (active && scroller) lockScroll(scroller, scroller.scrollTop);
 
   updateColWidthMin();
