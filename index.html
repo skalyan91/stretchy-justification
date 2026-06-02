@@ -928,14 +928,16 @@ function removeAnnotations() {
 
 // ── Caret ↔ source-offset mapping ─────────────────────
 // Both the plain-text edit layer and the rendered edit model have a text
-// content that equals the source text exactly (the model renders boundary
-// spaces between lines as zero-width spans), so the caret position maps to a
-// simple character offset, counted over text nodes while skipping the
-// non-text .space-annot overlay divs.
+// content that equals the source text exactly — boundary spaces between lines
+// are rendered as zero-size spans, and hyphenation hyphens (which are NOT in
+// the source) are rendered in .hyphen spans excluded from the count. So the
+// caret position maps to a simple character offset over the remaining text
+// nodes (skipping .space-annot overlays and .hyphen spans).
+const CARET_SKIP = '.space-annot, .hyphen';
 function textLenSkipAnnot(root) {
   let len = 0;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: n => n.parentElement?.closest('.space-annot')
+    acceptNode: n => n.parentElement?.closest(CARET_SKIP)
       ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
   });
   while (walker.nextNode()) len += walker.currentNode.textContent.length;
@@ -955,7 +957,7 @@ function setCaretCharOffset(target) {
   const sel = window.getSelection();
   if (!sel) return;
   const walker = document.createTreeWalker(colRegular, NodeFilter.SHOW_TEXT, {
-    acceptNode: n => n.parentElement?.closest('.space-annot')
+    acceptNode: n => n.parentElement?.closest(CARET_SKIP)
       ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
   });
   let offset = 0, last = null;
@@ -975,6 +977,31 @@ function setCaretCharOffset(target) {
     const r = document.createRange();
     r.setStart(last, last.textContent.length); r.collapse(true);
     sel.removeAllRanges(); sel.addRange(r);
+  }
+}
+
+// Keep the caret visible by scrolling its column's scroll container minimally.
+function scrollCaretIntoView() {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+  if (!colRegular.contains(range.startContainer)) return;
+  let rect = range.getBoundingClientRect();
+  if (!rect || (rect.top === 0 && rect.bottom === 0)) {
+    // Collapsed ranges can report an empty rect; fall back to the caret's line.
+    const host = range.startContainer.nodeType === Node.TEXT_NODE
+      ? range.startContainer.parentElement : range.startContainer;
+    rect = host?.getBoundingClientRect();
+  }
+  if (!rect) return;
+  const container = isMobile() ? colRegular.closest('.panel') : comparisonEl;
+  if (!container) return;
+  const c = container.getBoundingClientRect();
+  const margin = 28;
+  if (rect.bottom > c.bottom - margin) {
+    container.scrollTop += rect.bottom - (c.bottom - margin);
+  } else if (rect.top < c.top + margin) {
+    container.scrollTop -= (c.top + margin) - rect.top;
   }
 }
 
@@ -2146,10 +2173,11 @@ function renderRegular(text, colW, sz, lang, font, lines) {
 
   if (document.activeElement === colRegular) {
     // While editing, render the exact doubled-spacing justified model live
-    // (including the unjustified final line). Editing mutations happen on a
-    // flattened plain-text layer via flattenToPlain(); here we rebuild the
-    // model from the canonical sourceText and restore the caret.
-    renderEditModel(colW, sz, lang, font);
+    // (including the unjustified final line), reusing the SAME line breaks as
+    // the rested view so nothing jumps. Editing mutations happen on a flattened
+    // plain-text layer via flattenToPlain(); here we rebuild from sourceText and
+    // restore the caret.
+    renderEditModel(lines, colW, sz, lang, font);
     return;
   }
 
@@ -2181,49 +2209,59 @@ function renderRegular(text, colW, sz, lang, font, lines) {
   }
 }
 
-// Greedy space-only line breaking (no hyphenation) for the live edit model,
-// using the doubled-sentence-space width model. No hyphens are introduced, so
-// the rendered text content equals the source exactly (needed for caret mapping).
-function breakSpaceOnly(text, colW, sz, font) {
-  // Keep empty tokens (from a trailing/leading space) so the rendered text
-  // content stays exactly equal to the source — required for caret mapping.
-  const words = text.split(' ');
-  if (!words.length) return [];
-  const spW = naturalSpaceWidthAt(font.wdthDefault, sz, font);
-  const lines = [];
-  let cur = [], curW = 0;
-  for (let i = 0; i < words.length; i++) {
-    const wWidth = words[i] ? measure(words[i], font.wdthDefault, sz, font) : 0;
-    // Width added by appending this word: a word space (2× if the previous word
-    // ends a sentence) plus the word itself.
-    const gap = cur.length
-      ? spW * ((!frenchSpacing && wordEndsSentence(cur[cur.length - 1])) ? 2 : 1)
-      : 0;
-    if (cur.length && curW + gap + wWidth > colW) {
-      lines.push(cur.join(' '));
-      cur = [words[i]]; curW = wWidth;
-    } else {
-      cur.push(words[i]); curW += gap + wWidth;
+// Map each rendered line string back onto the canonical source text by matching
+// characters, so the live edit model can reuse the SAME line breaks as the
+// rested view (no jump). Detects added hyphenation hyphens (a '-' in the line
+// that isn't present in the source) and boundary spaces consumed at a line
+// break. Returns one entry per line: { src, addedHyphen, boundarySpace }.
+function reconstructLineSources(lines, src) {
+  const out = [];
+  let cur = 0;
+  for (const raw of lines) {
+    const lineStr = (raw || '').replace(/\s+$/, '');
+    const start = cur;
+    let addedHyphen = false;
+    for (let i = 0; i < lineStr.length; i++) {
+      const ch = lineStr[i];
+      if (ch === '­' || ch === '​') {
+        continue; // soft hyphen / zero-width space layout artifacts: not in source
+      } else if (ch === src[cur]) {
+        cur++;
+      } else if (ch === '-' && src[cur] !== '-') {
+        addedHyphen = true; // hyphenation hyphen — not in the source
+      } else {
+        // Defensive: drift means reconstruction failed; stop matching this line.
+        break;
+      }
     }
+    const end = cur; // line's source ends before any consumed boundary space
+    let boundarySpace = false;
+    if (src[cur] === ' ') { boundarySpace = true; cur++; }
+    out.push({ src: src.slice(start, end), addedHyphen, boundarySpace });
   }
-  if (cur.length) lines.push(cur.join(' '));
-  return lines;
+  // Any leftover source (e.g. a trailing space dropped by trimEnd) is carried on
+  // the final line so the model's text content still equals the source.
+  const tail = src.slice(cur);
+  return { infos: out, tail };
 }
 
-// Render the live edit model: the exact doubled-spacing justified layout
-// (last line unjustified but still doubling sentence spaces), with a zero-width
-// boundary space at the end of each non-final line so the element's text content
-// equals the source text — keeping caret offsets exact. Restores the caret.
-function renderEditModel(colW, sz, lang, font) {
+// Render the live edit model from the SAME lines the rested view uses: the exact
+// doubled-spacing justified layout (final line unjustified but still doubling
+// sentence spaces). Hyphenation hyphens render in .hyphen spans and boundary
+// spaces in zero-size spans, both arranged so the element's text content equals
+// the source — keeping caret offsets exact. Restores the caret.
+function renderEditModel(lines, colW, sz, lang, font) {
   const caret = getCaretCharOffset();
   removeAnnotations();
   colRegular.innerHTML = '';
 
-  const lines = breakSpaceOnly(sourceText, colW, sz, font);
+  const { infos, tail } = reconstructLineSources(lines, sourceText);
   const isAr = lang === 'ar';
+  const hyphenW = measure('-', font.wdthDefault, sz, font);
   const frag = document.createDocumentFragment();
-  for (let i = 0; i < lines.length; i++) {
-    const isLast = i === lines.length - 1;
+  for (let i = 0; i < infos.length; i++) {
+    const info = infos[i];
+    const isLast = i === infos.length - 1;
     const el = document.createElement('div');
     el.setAttribute('lang', lang);
     el.style.cssText = [
@@ -2234,15 +2272,23 @@ function renderEditModel(colW, sz, lang, font) {
       isAr ? 'direction:rtl' : '',
       'white-space:nowrap',
     ].filter(Boolean).join(';');
-    setLineContent(el, lines[i], colW, font, sz, font.wdthDefault, isLast);
-    if (!isLast) {
-      // Zero-size boundary space → text content stays equal to the source
-      // without contributing to the line box (height:0 + top align so it can't
-      // inflate the line height).
+    // Justify the source text of the line to colW (minus the hyphen's width when
+    // a hyphenation hyphen will be appended, so the line still totals colW). The
+    // space widths come out identical to the rested render.
+    setLineContent(el, info.src, colW - (info.addedHyphen ? hyphenW : 0), font, sz, font.wdthDefault, isLast);
+    if (info.addedHyphen) {
+      const hy = document.createElement('span');
+      hy.className = 'hyphen';
+      hy.textContent = '-';
+      el.appendChild(hy);
+    }
+    if (info.boundarySpace || (isLast && tail)) {
+      // Zero-size boundary/trailing space → text content stays equal to the
+      // source without inflating the line box.
       const bsp = document.createElement('span');
       bsp.className = 'bsp';
       bsp.style.cssText = 'display:inline-block;width:0;height:0;overflow:hidden;vertical-align:top';
-      bsp.appendChild(document.createTextNode(' '));
+      bsp.appendChild(document.createTextNode(info.boundarySpace ? ' ' : tail));
       el.appendChild(bsp);
     }
     frag.appendChild(el);
@@ -2250,6 +2296,7 @@ function renderEditModel(colW, sz, lang, font) {
   colRegular.appendChild(frag);
 
   if (caret != null) setCaretCharOffset(caret);
+  scrollCaretIntoView();
 
   if (highlightSpaces || showRivers) {
     const naturalSpW = naturalSpaceWidth(font, sz);
