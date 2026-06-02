@@ -337,6 +337,8 @@
       opacity: 0.55;
       line-height: 1;
       padding-top: 3px;
+      user-select: none;
+      -webkit-user-select: none;
     }
     .annot.cl { color: #b07040; opacity: 0.85; }
     .lw.rtl { flex-direction: row-reverse; }
@@ -488,10 +490,15 @@
     .col.is-empty {
       text-align: left !important;
       direction: ltr !important;
+      min-height: 1.6em;
     }
+    /* Overlay (absolute) so the placeholder doesn't take its own line — the
+       caret sits on the first line, over the start of the placeholder. */
     .col.is-empty::before {
       content: 'Type or paste text here\2026';
-      display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
       color: var(--muted);
       opacity: 0.4;
       pointer-events: none;
@@ -911,14 +918,24 @@ function setEmptyState(empty) {
   colRegular.classList.toggle('is-empty', empty);
   colStretchy.classList.toggle('is-empty', empty);
   if (empty) {
-    colStretchy.innerHTML = '';
-    // Ensure both columns have the current font size so ::before inherits it
+    // Clear BOTH columns so neither keeps stale rendered text (or a browser-left
+    // <br>) behind the placeholder, then put the caret at the start of the column
+    // being edited so it sits on the first line over the placeholder.
+    const active = activeEditCol();
     const fsPx = `${+fsRange.value}px`;
-    colRegular.style.fontSize = fsPx;
-    colStretchy.style.fontSize = fsPx;
-    colStretchy.style.lineHeight = '1.45';
     const colW = isMobile() ? mobileColW() : Math.min(+cwRange.value || 400, colWidthMax());
-    colStretchy.style.width = colRegular.style.width || `${colW}px`;
+    for (const col of [colRegular, colStretchy]) {
+      col.innerHTML = '';
+      col.style.fontSize = fsPx;
+      col.style.lineHeight = '1.45';
+      col.style.width = col.style.width || `${colW}px`;
+    }
+    if (active) {
+      const r = document.createRange();
+      r.setStart(active, 0); r.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(r);
+    }
   }
 }
 
@@ -2263,21 +2280,33 @@ function reconstructLineSources(lines, src) {
   return { infos: out, tail };
 }
 
-// Append the hyphenation hyphen (.hyphen, excluded from the caret count) and a
-// zero-size boundary/trailing space to a rendered line, so the element's text
-// content equals the source — keeping caret offsets exact.
-function appendLineBoundary(el, info, isLast, tail) {
+// Append the hyphenation hyphen (.hyphen, excluded from the caret count) and the
+// boundary/trailing space to a rendered line, so the element's text content
+// equals the source — keeping caret offsets exact. Trailing spaces at the very
+// end of the text are rendered VISIBLY (real width) so the caret stays visible
+// after a trailing space; between-line boundary spaces stay zero-size.
+function appendLineBoundary(el, info, isLast, tail, spW) {
   if (info.addedHyphen) {
     const hy = document.createElement('span');
     hy.className = 'hyphen';
+    hy.contentEditable = 'false';   // the hyphenation hyphen isn't editable text
     hy.textContent = '-';
     el.appendChild(hy);
   }
-  if (info.boundarySpace || (isLast && tail)) {
+  if (isLast) {
+    const trailing = (info.boundarySpace ? ' ' : '') + (tail || '');
+    for (let k = 0; k < trailing.length; k++) {
+      const sp = document.createElement('span');
+      sp.className = 'sp';
+      sp.style.cssText = `display:inline-block;vertical-align:top;width:${spW.toFixed(3)}px`;
+      sp.appendChild(document.createTextNode(' '));
+      el.appendChild(sp);
+    }
+  } else if (info.boundarySpace) {
     const bsp = document.createElement('span');
     bsp.className = 'bsp';
     bsp.style.cssText = 'display:inline-block;width:0;height:0;overflow:hidden;vertical-align:top';
-    bsp.appendChild(document.createTextNode(info.boundarySpace ? ' ' : tail));
+    bsp.appendChild(document.createTextNode(' '));
     el.appendChild(bsp);
   }
 }
@@ -2310,7 +2339,7 @@ function renderEditModel(lines, colW, sz, lang, font) {
     // a hyphenation hyphen will be appended, so the line still totals colW). The
     // space widths come out identical to the rested render.
     setLineContent(el, info.src, colW - (info.addedHyphen ? hyphenW : 0), font, sz, font.wdthDefault, isLast);
-    appendLineBoundary(el, info, isLast, tail);
+    appendLineBoundary(el, info, isLast, tail, naturalSpaceWidthAt(font.wdthDefault, sz, font));
     frag.appendChild(el);
   }
   colRegular.appendChild(frag);
@@ -2361,10 +2390,11 @@ function renderStretchyEditModel(lines, colW, sz, lang, font) {
       'white-space:nowrap',
     ].filter(Boolean).join(';');
     setLineContent(el, info.src, colW - hyphenW, font, sz, wdthVal, isLast);
-    appendLineBoundary(el, info, isLast, tail);
+    appendLineBoundary(el, info, isLast, tail, naturalSpaceWidthAt(wdthVal, sz, font));
 
     const annot = document.createElement('span');
     annot.className = 'annot' + (cl ? ' cl' : '');
+    annot.contentEditable = 'false';   // caret must never land on the wdth label
     annot.textContent = isLast        ? `${font.wdthDefault}↵`
       : cl === 'max'                  ? `${font.wdthHi}↑`
       : cl === 'min'                  ? `${font.wdthLo}↓`
