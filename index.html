@@ -1026,8 +1026,12 @@ function readPlainEdit() {
   return (colRegular.textContent || '').replace(/\n+/g, ' ');
 }
 
-colRegular.addEventListener('mousedown', flattenToPlain);
-colRegular.addEventListener('touchstart', flattenToPlain, { passive: true });
+// Only flatten when ENTERING edit mode (not yet focused). While already
+// editing, a click just repositions the caret within the rendered model — the
+// model's caret mapping handles it, so we must not flatten (which would strip
+// the annotations and hyphenation until the next keystroke).
+colRegular.addEventListener('mousedown', () => { if (document.activeElement !== colRegular) flattenToPlain(); });
+colRegular.addEventListener('touchstart', () => { if (document.activeElement !== colRegular) flattenToPlain(); }, { passive: true });
 colRegular.addEventListener('compositionstart', () => { composingText = true; flattenToPlain(); });
 colRegular.addEventListener('beforeinput', e => { if (!e.isComposing) flattenToPlain(); });
 colRegular.addEventListener('focus', () => {
