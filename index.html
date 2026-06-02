@@ -474,8 +474,8 @@
     }
     .sidebar-close:hover { color: var(--fg); }
 
-    /* ── Contenteditable Regular column ─────────────────── */
-    #col-regular[contenteditable] {
+    /* ── Contenteditable text columns ───────────────────── */
+    .col[contenteditable] {
       outline: none;
       cursor: text;
       white-space: normal;
@@ -484,7 +484,7 @@
       text-align: justify;
       -webkit-user-modify: read-write-plaintext-only;
     }
-    #col-regular[contenteditable]:focus { outline: none; }
+    .col[contenteditable]:focus { outline: none; }
     .col.is-empty {
       text-align: left !important;
       direction: ltr !important;
@@ -736,7 +736,7 @@
   </section>
   <section class="panel">
     <div class="panel-label">Stretchy</div>
-    <div class="col" id="col-stretchy"></div>
+    <div class="col" id="col-stretchy" contenteditable="true" spellcheck="false" autocorrect="off" autocapitalize="off" data-gramm="false"></div>
   </section>
 </div>
 
@@ -922,8 +922,8 @@ function setEmptyState(empty) {
   }
 }
 
-function removeAnnotations() {
-  colRegular.querySelectorAll('.space-annot').forEach(d => d.remove());
+function removeAnnotations(col = colRegular) {
+  col.querySelectorAll('.space-annot').forEach(d => d.remove());
 }
 
 // ── Caret ↔ source-offset mapping ─────────────────────
@@ -932,8 +932,10 @@ function removeAnnotations() {
 // are rendered as zero-size spans, and hyphenation hyphens (which are NOT in
 // the source) are rendered in .hyphen spans excluded from the count. So the
 // caret position maps to a simple character offset over the remaining text
-// nodes (skipping .space-annot overlays and .hyphen spans).
-const CARET_SKIP = '.space-annot, .hyphen';
+// nodes (skipping .space-annot / .annot overlays and .hyphen spans). Either
+// editable column (Regular or Stretchy) can be edited; the helpers take the
+// column being edited as an argument.
+const CARET_SKIP = '.space-annot, .hyphen, .annot';
 function textLenSkipAnnot(root) {
   let len = 0;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -943,20 +945,20 @@ function textLenSkipAnnot(root) {
   while (walker.nextNode()) len += walker.currentNode.textContent.length;
   return len;
 }
-function getCaretCharOffset() {
+function getCaretCharOffset(col) {
   const sel = window.getSelection();
   if (!sel || !sel.rangeCount) return null;
   const range = sel.getRangeAt(0);
-  if (!colRegular.contains(range.startContainer)) return null;
+  if (!col.contains(range.startContainer)) return null;
   const pre = document.createRange();
-  pre.selectNodeContents(colRegular);
+  pre.selectNodeContents(col);
   pre.setEnd(range.startContainer, range.startOffset);
   return textLenSkipAnnot(pre.cloneContents());
 }
-function setCaretCharOffset(target) {
+function setCaretCharOffset(col, target) {
   const sel = window.getSelection();
   if (!sel) return;
-  const walker = document.createTreeWalker(colRegular, NodeFilter.SHOW_TEXT, {
+  const walker = document.createTreeWalker(col, NodeFilter.SHOW_TEXT, {
     acceptNode: n => n.parentElement?.closest(CARET_SKIP)
       ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
   });
@@ -981,11 +983,11 @@ function setCaretCharOffset(target) {
 }
 
 // Keep the caret visible by scrolling its column's scroll container minimally.
-function scrollCaretIntoView() {
+function scrollCaretIntoView(col) {
   const sel = window.getSelection();
   if (!sel || !sel.rangeCount) return;
   const range = sel.getRangeAt(0);
-  if (!colRegular.contains(range.startContainer)) return;
+  if (!col.contains(range.startContainer)) return;
   let rect = range.getBoundingClientRect();
   if (!rect || (rect.top === 0 && rect.bottom === 0)) {
     // Collapsed ranges can report an empty rect; fall back to the caret's line.
@@ -994,7 +996,7 @@ function scrollCaretIntoView() {
     rect = host?.getBoundingClientRect();
   }
   if (!rect) return;
-  const container = isMobile() ? colRegular.closest('.panel') : comparisonEl;
+  const container = isMobile() ? col.closest('.panel') : comparisonEl;
   if (!container) return;
   const c = container.getBoundingClientRect();
   const margin = 28;
@@ -1005,74 +1007,86 @@ function scrollCaretIntoView() {
   }
 }
 
-// Flatten the rendered edit model into a single plain-text node holding the
-// canonical source text, preserving the caret. All editing mutations happen on
-// this plain-text layer (so spaces/caret/IME behave natively); the rich doubled-
-// spacing model is re-rendered after each edit.
-function flattenToPlain() {
-  if (colRegular.classList.contains('is-empty')) return;
-  if (colRegular.childNodes.length === 1 && colRegular.firstChild?.nodeType === Node.TEXT_NODE) return;
-  const caret = getCaretCharOffset();
-  colRegular.textContent = sourceText;
-  if (caret != null) setCaretCharOffset(caret);
+// Flatten a column's rendered edit model into a single plain-text node holding
+// the canonical source text, preserving the caret. All editing mutations happen
+// on this plain-text layer (so spaces/caret/IME behave natively); the rich model
+// is re-rendered after each edit.
+function flattenToPlain(col) {
+  if (col.classList.contains('is-empty')) return;
+  if (col.childNodes.length === 1 && col.firstChild?.nodeType === Node.TEXT_NODE) return;
+  const caret = getCaretCharOffset(col);
+  col.textContent = sourceText;
+  if (caret != null) setCaretCharOffset(col, caret);
+}
+
+// The column currently being edited, or null.
+function activeEditCol() {
+  return (document.activeElement === colRegular) ? colRegular
+    : (document.activeElement === colStretchy) ? colStretchy : null;
 }
 
 let composingText = false;
-function readPlainEdit() {
-  // colRegular is the plain-text edit layer here. Only normalise newlines to
-  // spaces — do NOT collapse space runs or trim, so the edited text stays
-  // character-for-character equal to the DOM (keeping caret offsets exact).
-  // Multiple/edge spaces are normalised on blur.
-  return (colRegular.textContent || '').replace(/\n+/g, ' ');
+function readPlainEdit(col) {
+  // col is the plain-text edit layer here. Only normalise newlines to spaces —
+  // do NOT collapse space runs or trim, so the edited text stays character-for-
+  // character equal to the DOM (keeping caret offsets exact). Multiple/edge
+  // spaces are normalised on blur.
+  return (col.textContent || '').replace(/\n+/g, ' ');
 }
 
-// Only flatten when ENTERING edit mode (not yet focused). While already
-// editing, a click just repositions the caret within the rendered model — the
-// model's caret mapping handles it, so we must not flatten (which would strip
-// the annotations and hyphenation until the next keystroke).
-colRegular.addEventListener('mousedown', () => { if (document.activeElement !== colRegular) flattenToPlain(); });
-colRegular.addEventListener('touchstart', () => { if (document.activeElement !== colRegular) flattenToPlain(); }, { passive: true });
-colRegular.addEventListener('compositionstart', () => { composingText = true; flattenToPlain(); });
-colRegular.addEventListener('beforeinput', e => { if (!e.isComposing) flattenToPlain(); });
-colRegular.addEventListener('focus', () => {
-  flattenToPlain();
-  clearTimeout(renderTimer);
-  render();
-});
-colRegular.addEventListener('input', () => {
-  sourceText = readPlainEdit();
-  if (composingText) { updateEmptyState(); saveSession(); return; }
-  updateEmptyState();
-  clearTimeout(renderTimer);
-  saveSession();
-  render();
-});
-colRegular.addEventListener('compositionend', () => {
-  composingText = false;
-  sourceText = readPlainEdit();
-  updateEmptyState();
-  clearTimeout(renderTimer);
-  saveSession();
-  render();
-});
-colRegular.addEventListener('blur', () => {
-  sourceText = (sourceText || '').replace(/\s+/g, ' ').trim();
-  updateEmptyState();
-  clearTimeout(renderTimer);
-  saveSession();
-  render();
-});
-colRegular.addEventListener('paste', e => {
-  e.preventDefault();
-  const text = (e.clipboardData || window.clipboardData).getData('text/plain');
-  document.execCommand('insertText', false, text.replace(/\s+/g, ' '));
-});
-colRegular.addEventListener('keydown', e => {
-  if (e.key === 'Enter') {
+// Wire up live editing for an editable column (Regular or Stretchy). Both edit
+// the same canonical sourceText and re-render both columns on every change.
+function attachEditing(col) {
+  // Only flatten when ENTERING edit mode (not yet focused). While already
+  // editing, a click just repositions the caret within the rendered model — the
+  // model's caret mapping handles it, so we must not flatten (which would strip
+  // the annotations and hyphenation until the next keystroke).
+  col.addEventListener('mousedown', () => { if (document.activeElement !== col) flattenToPlain(col); });
+  col.addEventListener('touchstart', () => { if (document.activeElement !== col) flattenToPlain(col); }, { passive: true });
+  col.addEventListener('compositionstart', () => { composingText = true; flattenToPlain(col); });
+  col.addEventListener('beforeinput', e => { if (!e.isComposing) flattenToPlain(col); });
+  col.addEventListener('focus', () => {
+    flattenToPlain(col);
+    clearTimeout(renderTimer);
+    render();
+  });
+  col.addEventListener('input', () => {
+    sourceText = readPlainEdit(col);
+    if (composingText) { updateEmptyState(); saveSession(); return; }
+    updateEmptyState();
+    clearTimeout(renderTimer);
+    saveSession();
+    render();
+  });
+  col.addEventListener('compositionend', () => {
+    composingText = false;
+    sourceText = readPlainEdit(col);
+    updateEmptyState();
+    clearTimeout(renderTimer);
+    saveSession();
+    render();
+  });
+  col.addEventListener('blur', () => {
+    sourceText = (sourceText || '').replace(/\s+/g, ' ').trim();
+    updateEmptyState();
+    clearTimeout(renderTimer);
+    saveSession();
+    render();
+  });
+  col.addEventListener('paste', e => {
     e.preventDefault();
-    document.execCommand('insertText', false, ' ');
-  }
-});
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, text.replace(/\s+/g, ' '));
+  });
+  col.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.execCommand('insertText', false, ' ');
+    }
+  });
+}
+attachEditing(colRegular);
+attachEditing(colStretchy);
 
 // ── Clear / Reset ─────────────────────────────────────
 function doClear() {
@@ -2173,7 +2187,7 @@ async function render() {
 function renderRegular(text, colW, sz, lang, font, lines) {
   colRegular.classList.remove('is-empty');
   colStretchy.classList.remove('is-empty');
-  applyEditableStyles(sz, lang, font, colW);
+  applyEditableStyles(colRegular, sz, lang, font, colW);
 
   if (document.activeElement === colRegular) {
     // While editing, render the exact doubled-spacing justified model live
@@ -2249,14 +2263,30 @@ function reconstructLineSources(lines, src) {
   return { infos: out, tail };
 }
 
-// Render the live edit model from the SAME lines the rested view uses: the exact
-// doubled-spacing justified layout (final line unjustified but still doubling
-// sentence spaces). Hyphenation hyphens render in .hyphen spans and boundary
-// spaces in zero-size spans, both arranged so the element's text content equals
-// the source — keeping caret offsets exact. Restores the caret.
+// Append the hyphenation hyphen (.hyphen, excluded from the caret count) and a
+// zero-size boundary/trailing space to a rendered line, so the element's text
+// content equals the source — keeping caret offsets exact.
+function appendLineBoundary(el, info, isLast, tail) {
+  if (info.addedHyphen) {
+    const hy = document.createElement('span');
+    hy.className = 'hyphen';
+    hy.textContent = '-';
+    el.appendChild(hy);
+  }
+  if (info.boundarySpace || (isLast && tail)) {
+    const bsp = document.createElement('span');
+    bsp.className = 'bsp';
+    bsp.style.cssText = 'display:inline-block;width:0;height:0;overflow:hidden;vertical-align:top';
+    bsp.appendChild(document.createTextNode(info.boundarySpace ? ' ' : tail));
+    el.appendChild(bsp);
+  }
+}
+
+// Render the Regular live edit model from the SAME lines the rested view uses:
+// the exact doubled-spacing justified layout (final line unjustified but still
+// doubling sentence spaces), at the font's default width. Restores the caret.
 function renderEditModel(lines, colW, sz, lang, font) {
-  const caret = getCaretCharOffset();
-  removeAnnotations();
+  const caret = getCaretCharOffset(colRegular);
   colRegular.innerHTML = '';
 
   const { infos, tail } = reconstructLineSources(lines, sourceText);
@@ -2280,27 +2310,13 @@ function renderEditModel(lines, colW, sz, lang, font) {
     // a hyphenation hyphen will be appended, so the line still totals colW). The
     // space widths come out identical to the rested render.
     setLineContent(el, info.src, colW - (info.addedHyphen ? hyphenW : 0), font, sz, font.wdthDefault, isLast);
-    if (info.addedHyphen) {
-      const hy = document.createElement('span');
-      hy.className = 'hyphen';
-      hy.textContent = '-';
-      el.appendChild(hy);
-    }
-    if (info.boundarySpace || (isLast && tail)) {
-      // Zero-size boundary/trailing space → text content stays equal to the
-      // source without inflating the line box.
-      const bsp = document.createElement('span');
-      bsp.className = 'bsp';
-      bsp.style.cssText = 'display:inline-block;width:0;height:0;overflow:hidden;vertical-align:top';
-      bsp.appendChild(document.createTextNode(info.boundarySpace ? ' ' : tail));
-      el.appendChild(bsp);
-    }
+    appendLineBoundary(el, info, isLast, tail);
     frag.appendChild(el);
   }
   colRegular.appendChild(frag);
 
-  if (caret != null) setCaretCharOffset(caret);
-  scrollCaretIntoView();
+  if (caret != null) setCaretCharOffset(colRegular, caret);
+  scrollCaretIntoView(colRegular);
 
   if (highlightSpaces || showRivers) {
     const naturalSpW = naturalSpaceWidth(font, sz);
@@ -2308,24 +2324,82 @@ function renderEditModel(lines, colW, sz, lang, font) {
   }
 }
 
-function applyEditableStyles(sz, lang, font, colW) {
+// Render the Stretchy live edit model: the same per-line wdth justification as
+// the rested Stretchy view (with its wdth annotations), made editable. Reuses
+// the rested stretchy lines so nothing jumps. Restores the caret.
+function renderStretchyEditModel(lines, colW, sz, lang, font) {
+  const caret = getCaretCharOffset(colStretchy);
+  colStretchy.innerHTML = '';
+
+  const { infos, tail } = reconstructLineSources(lines, sourceText);
   const isAr = lang === 'ar';
-  colRegular.setAttribute('lang', lang);
-  colRegular.style.fontFamily            = `'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`;
-  colRegular.style.fontSize              = `${sz}px`;
-  colRegular.style.lineHeight            = '1.45';
-  colRegular.style.fontVariationSettings = fontVarSettings(font, font.wdthDefault, sz);
-  colRegular.style.direction             = isAr ? 'rtl' : 'ltr';
-  // Justify only matters in editing mode: it stretches the plain-text spaces so
-  // the live annotations reveal the spacing deviations. Rendered line divs use
-  // white-space:nowrap, so this container value doesn't affect them.
-  colRegular.style.textAlign             = 'justify';
-  if (colW) colRegular.style.width       = `${colW}px`;
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < infos.length; i++) {
+    const info = infos[i];
+    const isLast = i === infos.length - 1;
+    const lineText = lines[i] || '';
+
+    let wdthVal = font.wdthDefault, cl = null;
+    if (!isLast) {
+      const nSentW = frenchSpacing ? 0
+        : lineText.split(' ').slice(0, -1).filter(wordEndsSentence).length
+          * naturalSpaceWidth(font, sz);
+      ({ v: wdthVal, cl } = stretchyWdth(lineText, colW - nSentW, sz, font));
+    }
+    const hyphenW = info.addedHyphen ? measure('-', wdthVal, sz, font) : 0;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = isAr ? 'lw rtl' : 'lw';
+
+    const el = document.createElement('div');
+    el.className = 'line';
+    el.style.cssText = [
+      `font-family:'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`,
+      `font-size:${sz}px`,
+      `line-height:1.45`,
+      `font-variation-settings:${fontVarSettings(font, wdthVal, sz)}`,
+      isAr ? 'direction:rtl' : '',
+      'white-space:nowrap',
+    ].filter(Boolean).join(';');
+    setLineContent(el, info.src, colW - hyphenW, font, sz, wdthVal, isLast);
+    appendLineBoundary(el, info, isLast, tail);
+
+    const annot = document.createElement('span');
+    annot.className = 'annot' + (cl ? ' cl' : '');
+    annot.textContent = isLast        ? `${font.wdthDefault}↵`
+      : cl === 'max'                  ? `${font.wdthHi}↑`
+      : cl === 'min'                  ? `${font.wdthLo}↓`
+      :                                 wdthVal.toFixed(1);
+
+    wrapper.append(el, annot);
+    frag.appendChild(wrapper);
+  }
+  colStretchy.appendChild(frag);
+
+  if (caret != null) setCaretCharOffset(colStretchy, caret);
+  scrollCaretIntoView(colStretchy);
+
+  if (highlightSpaces || showRivers) {
+    const naturalSpW = naturalSpaceWidth(font, sz);
+    addSpaceHighlightsForLines(Array.from(colStretchy.querySelectorAll('.line')), naturalSpW, sz);
+  }
+}
+
+function applyEditableStyles(col, sz, lang, font, colW) {
+  const isAr = lang === 'ar';
+  col.setAttribute('lang', lang);
+  col.style.fontFamily            = `'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`;
+  col.style.fontSize              = `${sz}px`;
+  col.style.lineHeight            = '1.45';
+  col.style.fontVariationSettings = fontVarSettings(font, font.wdthDefault, sz);
+  col.style.direction             = isAr ? 'rtl' : 'ltr';
+  // Justify only matters during the brief plain-text edit moments; rendered line
+  // divs use white-space:nowrap, so this container value doesn't affect them.
+  col.style.textAlign             = 'justify';
+  if (colW) col.style.width       = `${colW}px`;
 }
 
 async function renderStretchy(text, colW, sz, lang, font, precomputedLines, myId) {
-  colStretchy.innerHTML = '';
-
   let lines;
   try {
     lines = precomputedLines ?? await layoutEnglish(text, colW, sz, font);
@@ -2335,6 +2409,18 @@ async function renderStretchy(text, colW, sz, lang, font, precomputedLines, myId
   }
   if (renderId !== myId) return;
 
+  colRegular.classList.remove('is-empty');
+  colStretchy.classList.remove('is-empty');
+
+  if (document.activeElement === colStretchy) {
+    // The Stretchy column is being edited: render its editable per-line-wdth
+    // model live, reusing the rested stretchy lines so nothing jumps.
+    applyEditableStyles(colStretchy, sz, lang, font, colW);
+    renderStretchyEditModel(lines, colW, sz, lang, font);
+    return;
+  }
+
+  colStretchy.innerHTML = '';
   const isAr = lang === 'ar';
   const frag = document.createDocumentFragment();
 
