@@ -1130,12 +1130,66 @@ function lineAtClientY(col, clientY) {
 }
 
 let composingText = false;
+// When set, the next render() places the caret at this source offset in this
+// column (instead of reading the live selection) — used by controlled edits,
+// which mutate sourceText before re-rendering.
+let pendingEditCaret = null;
+
 function readPlainEdit(col) {
   // col is the plain-text edit layer here. Only normalise newlines to spaces —
   // do NOT collapse space runs or trim, so the edited text stays character-for-
   // character equal to the DOM (keeping caret offsets exact). Multiple/edge
   // spaces are normalised on blur.
   return (col.textContent || '').replace(/\n+/g, ' ');
+}
+
+// Apply an edit directly to the canonical sourceText and re-render, WITHOUT
+// flattening the model to plain text. Because we preventDefault the input, the
+// browser never mutates the DOM and never auto-scrolls — which is what caused
+// the scroll to jump. Returns true if the input type was handled here; false
+// means the caller should fall back to the plain-text flatten path.
+function handleControlledInput(col, e) {
+  const it = e.inputType || '';
+  const isInsert = it.startsWith('insert');
+  const isDelete = it.startsWith('delete');
+  if (!isInsert && !isDelete) return false; // formatting / history / unknown → fallback
+
+  // The exact source range the edit affects (the browser computes this, honouring
+  // grapheme clusters), falling back to the current selection.
+  let start, end;
+  const ranges = e.getTargetRanges ? e.getTargetRanges() : [];
+  if (ranges.length) {
+    start = offsetAtPoint(col, ranges[0].startContainer, ranges[0].startOffset);
+    end   = offsetAtPoint(col, ranges[0].endContainer, ranges[0].endOffset);
+  } else {
+    const offs = getSelectionOffsets(col);
+    if (!offs) return false;
+    start = offs.start; end = offs.end;
+  }
+  if (start > end) { const t = start; start = end; end = t; }
+
+  let data = '';
+  if (isInsert) {
+    if (it === 'insertParagraph' || it === 'insertLineBreak') {
+      data = ' '; // newlines collapse to a single space in this single-paragraph model
+    } else if (it === 'insertFromPaste' || it === 'insertFromDrop' || it === 'insertReplacementText') {
+      data = (e.dataTransfer ? e.dataTransfer.getData('text/plain') : (e.data ?? '')).replace(/\s+/g, ' ');
+    } else {
+      data = e.data ?? '';
+      if (!data) return false; // data carried elsewhere (e.g. some IME paths) → fallback
+    }
+  } else if (start === end) {
+    return false; // delete with no resolved range → fallback (browser knows best)
+  }
+
+  e.preventDefault();
+  sourceText = sourceText.slice(0, start) + data + sourceText.slice(end);
+  pendingEditCaret = { col, offset: start + data.length };
+  updateEmptyState();
+  clearTimeout(renderTimer);
+  saveSession();
+  render();
+  return true;
 }
 
 // Wire up live editing for an editable column (Regular or Stretchy). Both edit
@@ -1165,15 +1219,22 @@ function attachEditing(col) {
     if (document.activeElement !== col) col.focus();
     placeCaretAtLineEnd(col, line);
   });
+  // IME composition needs a real plain-text layer (the model's spans interfere
+  // with composition), so for composition we still flatten to plain text and read
+  // it back — this is the only remaining use of flattening.
   col.addEventListener('compositionstart', () => { composingText = true; captureEditScroll(); flattenToPlain(col); });
-  col.addEventListener('beforeinput', e => { if (!e.isComposing) { captureEditScroll(); flattenToPlain(col); } });
+  col.addEventListener('beforeinput', e => {
+    if (e.isComposing) return;                  // composition: handled via the flatten path
+    if (handleControlledInput(col, e)) return;  // edited sourceText directly, DOM untouched
+    // Rare/unhandled input types (undo, formatting, …): fall back to flattening.
+    captureEditScroll();
+    flattenToPlain(col);
+  });
   col.addEventListener('input', () => {
+    // Only reached for composition or the flatten fallback (controlled edits
+    // preventDefault, so no input fires for them).
     sourceText = readPlainEdit(col);
     if (composingText) { updateEmptyState(); saveSession(); return; }
-    // Undo the browser's auto-scroll-to-caret SYNCHRONOUSLY here (before paint
-    // and before the next keystroke), so the view doesn't flicker and a fast
-    // next keystroke can't capture an already-jumped scroll position. render()
-    // then re-renders the model and nudges the caret into view if needed.
     restoreEditScroll();
     updateEmptyState();
     clearTimeout(renderTimer);
@@ -1193,16 +1254,20 @@ function attachEditing(col) {
     // trailing spaces). The model is already current, so no re-render is needed.
     saveSession();
   });
+  // Plain-text paste, applied controlled (no flatten). preventDefault stops the
+  // native paste (and its beforeinput), so this is the single paste path.
   col.addEventListener('paste', e => {
     e.preventDefault();
-    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
-    document.execCommand('insertText', false, text.replace(/\s+/g, ' '));
-  });
-  col.addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      document.execCommand('insertText', false, ' ');
-    }
+    const text = ((e.clipboardData || window.clipboardData)?.getData('text/plain') || '').replace(/\s+/g, ' ');
+    if (!text) return;
+    const offs = getSelectionOffsets(col);
+    if (!offs) return;
+    sourceText = sourceText.slice(0, offs.start) + text + sourceText.slice(offs.end);
+    pendingEditCaret = { col, offset: offs.start + text.length };
+    updateEmptyState();
+    clearTimeout(renderTimer);
+    saveSession();
+    render();
   });
 }
 attachEditing(colRegular);
@@ -2264,6 +2329,8 @@ function scheduleWdthRender() {
 
 async function render() {
   const myId = ++renderId;
+  const pending = pendingEditCaret;   // caret target for a controlled edit
+  pendingEditCaret = null;
   const text = getSourceText();
   const sz   = +fsRange.value;
   const colW = isMobile() ? mobileColW() : Math.min(+cwRange.value, colWidthMax());
@@ -2305,8 +2372,8 @@ async function render() {
   // otherwise).
   applyEditableStyles(colRegular, sz, lang, font, colW);
   applyEditableStyles(colStretchy, sz, lang, font, colW);
-  renderEditModel(normalLines, colW, sz, lang, font);
-  renderStretchyEditModel(stretchyLines, colW, sz, lang, font);
+  renderEditModel(normalLines, colW, sz, lang, font, pending);
+  renderStretchyEditModel(stretchyLines, colW, sz, lang, font, pending);
 
   // Undo any scroll clamp caused by the transient plain-text flatten, then keep
   // the caret visible in whichever column is being edited.
@@ -2387,8 +2454,8 @@ function appendLineBoundary(el, info, isLast, tail, spW) {
 // Render the Regular live edit model from the SAME lines the rested view uses:
 // the exact doubled-spacing justified layout (final line unjustified but still
 // doubling sentence spaces), at the font's default width. Restores the caret.
-function renderEditModel(lines, colW, sz, lang, font) {
-  const caret = getCaretCharOffset(colRegular);
+function renderEditModel(lines, colW, sz, lang, font, pending) {
+  const caret = (pending && pending.col === colRegular) ? pending.offset : getCaretCharOffset(colRegular);
   colRegular.innerHTML = '';
 
   const { infos, tail } = reconstructLineSources(lines, sourceText);
@@ -2428,8 +2495,8 @@ function renderEditModel(lines, colW, sz, lang, font) {
 // Render the Stretchy live edit model: the same per-line wdth justification as
 // the rested Stretchy view (with its wdth annotations), made editable. Reuses
 // the rested stretchy lines so nothing jumps. Restores the caret.
-function renderStretchyEditModel(lines, colW, sz, lang, font) {
-  const caret = getCaretCharOffset(colStretchy);
+function renderStretchyEditModel(lines, colW, sz, lang, font, pending) {
+  const caret = (pending && pending.col === colStretchy) ? pending.offset : getCaretCharOffset(colStretchy);
   colStretchy.innerHTML = '';
 
   const { infos, tail } = reconstructLineSources(lines, sourceText);
