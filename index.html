@@ -1072,10 +1072,12 @@ function nodeOffsetAt(col, target) {
     const len = node.textContent.length;
     if (offset + len >= target) {
       const nodeOff = Math.max(0, target - offset);
-      // A boundary-space span (.bsp) has zero layout size; placing the caret
-      // at its end keeps the cursor visually stuck. Advance to the next text
-      // node (the first character of the next line) so the caret moves.
-      if (nodeOff === len && node.parentElement?.closest('.bsp')) {
+      // Placing the caret at the end of a text node inside a .bsp (zero-size
+      // boundary-space span) or .sp (inline-block space span) causes iOS Safari
+      // to render the cursor before the span rather than after it. Advance to
+      // the next text node so the caret lands on the first character of the
+      // following word/line, which iOS positions correctly.
+      if (nodeOff === len && node.parentElement?.closest('.bsp, .sp')) {
         if (walker.nextNode()) return { node: walker.currentNode, offset: 0 };
       }
       return { node, offset: nodeOff };
