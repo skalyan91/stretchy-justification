@@ -462,6 +462,12 @@
       box-shadow: 0 4px 16px rgba(0,0,0,0.12);
     }
     .bar-drawer.open { display: block; }
+    .bar-drawer-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0 20px;
+    }
+    .bar-drawer-col {}
 
     /* Sidebar close button (mobile only) */
     .sidebar-header-row {
@@ -609,40 +615,46 @@
   <button class="bar-drawer-btn" id="settings-drawer-btn" aria-expanded="false">Settings ▾</button>
 </div>
 <div class="bar-drawer" id="settings-drawer">
-  <div class="s-label" style="margin-bottom:8px">Display</div>
-  <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
-    <label class="check-row">
-      <input type="checkbox" id="hb-highlight-cb" checked>
-      Space highlights
-    </label>
-    <label class="check-row">
-      <input type="checkbox" id="hb-rivers-cb">
-      Rivers
-    </label>
-    <label class="check-row">
-      <input type="checkbox" id="hb-french-cb">
-      French spacing
-    </label>
+  <div class="bar-drawer-grid">
+    <div class="bar-drawer-col">
+      <div class="s-label" style="margin-bottom:8px">Display</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+        <label class="check-row">
+          <input type="checkbox" id="hb-highlight-cb" checked>
+          Space highlights
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="hb-rivers-cb">
+          Rivers
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="hb-french-cb">
+          French spacing
+        </label>
+      </div>
+      <div class="s-label" style="margin-bottom:8px">Font</div>
+      <div class="btn-row" style="margin-bottom:8px">
+        <button class="btn btn-outline" id="hb-upload-btn">Upload override…</button>
+      </div>
+      <div id="hb-font-info" style="font-size:11px;line-height:1.6;color:var(--muted)">Loading…</div>
+    </div>
+    <div class="bar-drawer-col">
+      <div class="s-label" style="margin-bottom:8px">Width axis subset</div>
+      <div class="range-dual-wrap" id="hb-wdth-dual">
+        <div class="range-track-bg"></div>
+        <div class="range-fill" id="hb-wdth-fill"></div>
+        <input type="range" id="hb-wdth-lo-range">
+        <input type="range" id="hb-wdth-hi-range">
+      </div>
+      <div class="wdth-num-row" style="margin-top:6px;margin-bottom:14px">
+        <span class="wdth-num-label">Min</span>
+        <input type="number" id="hb-wdth-lo-num" step="1">
+        <span class="wdth-spacer"></span>
+        <span class="wdth-num-label">Max</span>
+        <input type="number" id="hb-wdth-hi-num" step="1">
+      </div>
+    </div>
   </div>
-  <div class="s-label" style="margin-bottom:8px">Width axis subset</div>
-  <div class="range-dual-wrap" id="hb-wdth-dual">
-    <div class="range-track-bg"></div>
-    <div class="range-fill" id="hb-wdth-fill"></div>
-    <input type="range" id="hb-wdth-lo-range">
-    <input type="range" id="hb-wdth-hi-range">
-  </div>
-  <div class="wdth-num-row" style="margin-top:6px;margin-bottom:14px">
-    <span class="wdth-num-label">Min</span>
-    <input type="number" id="hb-wdth-lo-num" step="1">
-    <span class="wdth-spacer"></span>
-    <span class="wdth-num-label">Max</span>
-    <input type="number" id="hb-wdth-hi-num" step="1">
-  </div>
-  <div class="s-label" style="margin-bottom:8px">Font</div>
-  <div class="btn-row" style="margin-bottom:8px">
-    <button class="btn btn-outline" id="hb-upload-btn">Upload override…</button>
-  </div>
-  <div id="hb-font-info" style="font-size:11px;line-height:1.6;color:var(--muted)">Loading…</div>
 </div>
 <aside>
   <div class="sidebar-header">
