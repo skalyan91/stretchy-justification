@@ -1249,6 +1249,25 @@ function placeCaretAtLineEnd(col, line) {
   if (container && savedTop != null) container.scrollTop = savedTop;
 }
 
+// Place the caret at the beginning of a rendered line's visible text.
+// Scroll-neutral: never moves the viewport.
+function placeCaretAtLineStart(col, line) {
+  const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.parentElement?.closest(CARET_SKIP)
+      ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+  });
+  if (!walker.nextNode()) return;
+  const first = walker.currentNode;
+  const container = scrollContainerFor(col);
+  const savedTop = container ? container.scrollTop : null;
+  const sel = window.getSelection();
+  const r = document.createRange();
+  r.setStart(first, 0);
+  r.collapse(true);
+  sel.removeAllRanges(); sel.addRange(r);
+  if (container && savedTop != null) container.scrollTop = savedTop;
+}
+
 // The rendered line whose row best matches a click's vertical position — the
 // line containing clientY, else the nearest line above/below.
 function lineAtClientY(col, clientY) {
@@ -1431,7 +1450,32 @@ function attachEditing(col) {
     const scroller = scrollContainerFor(col);
     const top = scroller ? scroller.scrollTop : null;
     if (document.activeElement !== col) col.focus({ preventScroll: true });
-    placeCaretAtLineEnd(col, line);
+    const colRect = col.getBoundingClientRect();
+    if (e.clientX < colRect.left) {
+      // Left margin: beginning of nearest line.
+      placeCaretAtLineStart(col, line);
+    } else if (e.clientY > colRect.bottom) {
+      // Below the last line: nearest character in the last line by x coordinate.
+      const lineRect = line.getBoundingClientRect();
+      const clampedY = (lineRect.top + lineRect.bottom) / 2;
+      const range = document.caretRangeFromPoint?.(e.clientX, clampedY)
+        ?? (() => {
+            const p = document.caretPositionFromPoint?.(e.clientX, clampedY);
+            if (!p) return null;
+            const r = document.createRange();
+            r.setStart(p.offsetNode, p.offset); r.collapse(true);
+            return r;
+          })();
+      if (range) {
+        const sel = window.getSelection();
+        sel.removeAllRanges(); sel.addRange(range);
+      } else {
+        placeCaretAtLineEnd(col, line);
+      }
+    } else {
+      // Right gutter / between lines: end of nearest line.
+      placeCaretAtLineEnd(col, line);
+    }
     if (scroller && top != null) scroller.scrollTop = top;
   });
   // IME composition needs a real plain-text layer (the model's spans interfere
