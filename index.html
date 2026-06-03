@@ -158,6 +158,7 @@
     .slider-unit  { font-size: 10px; color: var(--muted); }
     .slider-controls { display: flex; align-items: center; gap: 8px; }
     input[type="range"]  { flex: 1; accent-color: var(--fg); }
+    .slider-controls input[type="number"]:only-child { flex: 1; width: auto; }
     input[type="number"] {
       width: 52px;
       border: 1px solid var(--border);
@@ -651,11 +652,12 @@
     <option value="ar">Arabic</option>
   </select>
   <button class="bar-drawer-btn" id="font-modal-btn">Font</button>
-  <input type="number" id="hb-fs-num" class="bar-num" min="8" max="96" step="1" value="24" list="hb-fs-sizes">
+  <input type="number" id="hb-fs-num" class="bar-num" min="1" step="1" value="24" list="hb-fs-sizes">
   <datalist id="hb-fs-sizes">
-    <option value="10"><option value="12"><option value="14"><option value="16">
-    <option value="18"><option value="20"><option value="24"><option value="28">
-    <option value="32"><option value="36"><option value="48"><option value="72">
+    <option value="8"><option value="10"><option value="12"><option value="14">
+    <option value="16"><option value="18"><option value="20"><option value="24">
+    <option value="28"><option value="32"><option value="36"><option value="48">
+    <option value="60"><option value="72"><option value="96">
   </datalist>
   <button class="bar-action-btn" id="hb-clear-btn">Clear</button>
   <button class="bar-action-btn" id="hb-reset-btn">Reset</button>
@@ -762,8 +764,13 @@
           <span class="slider-unit">px</span>
         </div>
         <div class="slider-controls">
-          <input type="range"  id="fs-range" min="8" max="96" step="1" value="24">
-          <input type="number" id="fs-num"   min="8" max="96" step="1" value="24">
+          <input type="number" id="fs-num" min="1" step="1" value="24" list="fs-sizes">
+          <datalist id="fs-sizes">
+            <option value="8"><option value="10"><option value="12"><option value="14">
+            <option value="16"><option value="18"><option value="20"><option value="24">
+            <option value="28"><option value="32"><option value="36"><option value="48">
+            <option value="60"><option value="72"><option value="96">
+          </datalist>
         </div>
       </div>
     </div>
@@ -882,8 +889,8 @@ const uploadBtn   = get('upload-btn');
 const fontInfoEl  = get('font-info');
 const cwRange     = get('cw-range');
 const cwNum       = get('cw-num');
-const fsRange     = get('fs-range');
 const fsNum       = get('fs-num');
+const fsRange     = fsNum; // range slider removed; alias keeps existing fsRange.value reads working
 const colRegular    = get('col-regular');
 const colStretchy   = get('col-stretchy');
 const ms            = get('ms');
@@ -1556,13 +1563,11 @@ function bindSlider(range, num, integer = false) {
   });
 }
 bindSlider(cwRange, cwNum);
-bindSlider(fsRange, fsNum, true);
-// Font size changes alter line count, so re-compute the initial column width.
-fsRange.addEventListener('input',  resetColWidth);
-fsNum.addEventListener('change',   resetColWidth);
-// Keep bar font-size field in sync when sidebar slider changes.
-fsRange.addEventListener('input',  () => { hbFsNum.value = fsRange.value; });
-fsNum.addEventListener('change',   () => { hbFsNum.value = fsNum.value; });
+fsNum.addEventListener('change', () => {
+  let v = Math.max(1, Math.round(+fsNum.value || 1));
+  fsNum.value = v; hbFsNum.value = v;
+  resetColWidth(); scheduleRender();
+});
 
 highlightCb.addEventListener('change', () => {
   highlightSpaces = highlightCb.checked;
@@ -1654,11 +1659,9 @@ wdthHiNum.addEventListener('change', () => {
 
 // ── Bar control event listeners ──────────────────────
 hbFsNum.addEventListener('change', () => {
-  const v = Math.round(Math.max(+hbFsNum.min, Math.min(+hbFsNum.max, +hbFsNum.value || 0)));
-  hbFsNum.value = v;
-  fsNum.value = v; fsRange.value = v;
-  resetColWidth();
-  scheduleRender();
+  const v = Math.max(1, Math.round(+hbFsNum.value || 1));
+  hbFsNum.value = v; fsNum.value = v;
+  resetColWidth(); scheduleRender();
 });
 
 hbHighlightCb.addEventListener('change', () => {
@@ -2914,7 +2917,7 @@ function showPH(msg) {
   const sessionText = localStorage.getItem(`sourceText_${initLang}`);
   const initialText = p.text ?? (sessionText !== null ? sessionText : PRESET_MAP[initLang]);
   setSourceText(initialText);
-  if (p.fs)  { fsRange.value = p.fs;  fsNum.value = p.fs;  hbFsNum.value = p.fs; }
+  if (p.fs)  { fsNum.value = p.fs;  hbFsNum.value = p.fs; }
   highlightSpaces        = !!(p.highlight ?? true);
   highlightCb.checked    = hbHighlightCb.checked = highlightSpaces;
   showRivers             = !!p.rivers;
