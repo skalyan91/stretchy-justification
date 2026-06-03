@@ -405,7 +405,7 @@
       color: var(--muted);
     }
     input.bar-num {
-      width: 38px;
+      width: 44px;
       border: 1px solid var(--border);
       border-radius: 3px;
       padding: 3px 4px;
@@ -651,10 +651,12 @@
     <option value="ar">Arabic</option>
   </select>
   <button class="bar-drawer-btn" id="font-modal-btn">Font</button>
-  <div class="bar-field">
-    <span class="bar-field-label">Size</span>
-    <input type="number" id="hb-fs-num" class="bar-num" min="8" max="96" step="1" value="24">
-  </div>
+  <input type="number" id="hb-fs-num" class="bar-num" min="8" max="96" step="1" value="24" list="hb-fs-sizes">
+  <datalist id="hb-fs-sizes">
+    <option value="10"><option value="12"><option value="14"><option value="16">
+    <option value="18"><option value="20"><option value="24"><option value="28">
+    <option value="32"><option value="36"><option value="48"><option value="72">
+  </datalist>
   <button class="bar-action-btn" id="hb-clear-btn">Clear</button>
   <button class="bar-action-btn" id="hb-reset-btn">Reset</button>
   <button class="bar-drawer-btn" id="settings-drawer-btn" aria-expanded="false">Settings ▾</button>
