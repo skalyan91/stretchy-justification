@@ -1029,7 +1029,7 @@ function setEmptyState(empty) {
 // nodes (skipping .space-annot / .annot overlays and .hyphen spans). Either
 // editable column (Regular or Stretchy) can be edited; the helpers take the
 // column being edited as an argument.
-const CARET_SKIP = '.space-annot, .hyphen, .annot';
+const CARET_SKIP = '.space-annot, .hyphen, .annot, .ca';
 function textLenSkipAnnot(root) {
   let len = 0;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -1082,6 +1082,12 @@ function nodeOffsetAt(col, target) {
       // by iOS, and round-trips cleanly through offsetAtPoint.
       if (nodeOff === len && node.parentElement?.closest('.bsp, .sp')) {
         if (walker.nextNode()) return { node: walker.currentNode, offset: 0 };
+        // Use an unrestricted walker to find a .ca sentinel text node after the span.
+        // iOS Safari won't honour an element-level caret position; a text node anchor works.
+        const allWalker = document.createTreeWalker(col, NodeFilter.SHOW_TEXT);
+        allWalker.currentNode = node;
+        const caNode = allWalker.nextNode();
+        if (caNode) return { node: caNode, offset: 0 };
         const span = node.parentElement;
         let idx = 0;
         let sib = span;
@@ -2607,6 +2613,17 @@ function appendLineBoundary(el, info, isLast, tail, spW) {
       sp.style.cssText = `display:inline-block;vertical-align:top;width:${spW.toFixed(3)}px`;
       sp.appendChild(document.createTextNode(' '));
       el.appendChild(sp);
+    }
+    if (trailing.length > 0) {
+      // iOS Safari won't place the caret visually after an inline-block .sp span
+      // using an element-level DOM position. A real text node (even zero-width)
+      // gives it a concrete anchor. .ca is in CARET_SKIP so the sentinel char
+      // (﻿) is invisible to offset calculations.
+      const ca = document.createElement('span');
+      ca.className = 'ca';
+      ca.style.cssText = 'display:inline-block;width:0;height:0;overflow:hidden;vertical-align:top';
+      ca.appendChild(document.createTextNode('﻿'));
+      el.appendChild(ca);
     }
   } else if (info.boundarySpace) {
     const bsp = document.createElement('span');
