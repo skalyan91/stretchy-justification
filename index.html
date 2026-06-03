@@ -1355,13 +1355,17 @@ function attachEditing(col) {
   // caret at the END of the nearest line, not vanish into the margin number or do
   // nothing. Attached to the whole panel so clicks in the empty area below the
   // text (outside the column box) are handled too. Never scrolls.
-  // iOS Safari snaps the caret to the end of a contenteditable on every tap,
-  // both on first focus and on subsequent taps. This snapping is part of iOS's
-  // own touch-input caret pipeline, which runs after touchend. Calling
-  // e.preventDefault() on touchend suppresses that pipeline, so we can place
-  // the caret ourselves via caretRangeFromPoint without iOS overriding us.
-  // Gutter taps (outside the line elements) are left to the mousedown handler below.
+  // iOS Safari normalises the caret to the end of a line between touchend and
+  // mousedown. Trying to fix this in touchend (before the normalisation) fails
+  // because iOS overrides it. Instead: save the touch coordinates in touchend
+  // (no preventDefault — let iOS do its thing), then in the mousedown handler
+  // detect "this is a touch-initiated text tap" and use e.preventDefault() +
+  // caretRangeFromPoint to place the caret at the actual tap position. By the
+  // time mousedown fires, iOS has already snapped the caret and won't snap it
+  // again, so our addRange call wins.
+  // Gutter taps (outside the line elements) still go through the gutter path below.
   let _touchStartX = 0, _touchStartY = 0;
+  let _touchTextTap = null; // {x, y} set when a tap lands on text; cleared by mousedown
   col.addEventListener('touchstart', e => {
     if (e.touches.length === 1) {
       _touchStartX = e.touches[0].clientX;
@@ -1371,38 +1375,43 @@ function attachEditing(col) {
   col.addEventListener('touchend', e => {
     if (e.changedTouches.length !== 1) return;
     const touch = e.changedTouches[0];
-    // Ignore scrolls/drags — only intercept taps.
     if (Math.abs(touch.clientX - _touchStartX) > 10 ||
         Math.abs(touch.clientY - _touchStartY) > 10) return;
     const lineSel = col === colStretchy ? '.line' : '[lang]';
     if (!e.target.closest(lineSel)) return; // gutter tap — let mousedown handle it
-    // Compute range while touch coordinates are still viewport-correct.
-    const range = document.caretRangeFromPoint?.(touch.clientX, touch.clientY)
-      ?? (() => {
-          const p = document.caretPositionFromPoint?.(touch.clientX, touch.clientY);
-          if (!p) return null;
-          const r = document.createRange();
-          r.setStart(p.offsetNode, p.offset); r.collapse(true);
-          return r;
-        })();
-    if (!range) return;
-    // Suppress iOS's touch-input caret pipeline so our placement wins.
-    e.preventDefault();
-    const scroller = scrollContainerFor(col);
-    const top = scroller ? scroller.scrollTop : null;
-    // Always call focus (even if already focused). On iOS, calling focus()
-    // resets the browser's internal touch-selection state so the addRange()
-    // below is not overridden. On other browsers it is a no-op.
-    col.focus({ preventScroll: true });
-    if (scroller && top != null) scroller.scrollTop = top;
-    const sel = window.getSelection();
-    sel.removeAllRanges(); sel.addRange(range);
+    // Record where the finger tapped. The mousedown handler will use this to
+    // place the caret after iOS has finished its own (wrong) normalisation.
+    _touchTextTap = { x: touch.clientX, y: touch.clientY };
+    setTimeout(() => { _touchTextTap = null; }, 500); // safety clear
   });
   const panel = col.closest('.panel') || col;
   panel.addEventListener('mousedown', e => {
     if (e.target.closest('.panel-label')) return;
     const lineSel = col === colStretchy ? '.line' : '[lang]';
-    if (e.target.closest(lineSel)) return; // clicked on the text — let the browser handle it
+    if (e.target.closest(lineSel)) {
+      // Text tap from touch: iOS has already snapped the caret; override it now.
+      if (_touchTextTap) {
+        const { x, y } = _touchTextTap;
+        _touchTextTap = null;
+        e.preventDefault(); // stop any further browser caret placement
+        const scroller = scrollContainerFor(col);
+        const top = scroller ? scroller.scrollTop : null;
+        if (document.activeElement !== col) col.focus({ preventScroll: true });
+        if (scroller && top != null) scroller.scrollTop = top;
+        const range = document.caretRangeFromPoint?.(x, y)
+          ?? (() => {
+              const p = document.caretPositionFromPoint?.(x, y);
+              if (!p) return null;
+              const r = document.createRange();
+              r.setStart(p.offsetNode, p.offset); r.collapse(true);
+              return r;
+            })();
+        if (!range) return;
+        const sel = window.getSelection();
+        sel.removeAllRanges(); sel.addRange(range);
+      }
+      return; // desktop click: let browser place caret normally
+    }
     const line = lineAtClientY(col, e.clientY);
     if (!line) return;
     e.preventDefault();
