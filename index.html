@@ -1278,7 +1278,7 @@ function readPlainEdit(col) {
   // do NOT collapse space runs or trim, so the edited text stays character-for-
   // character equal to the DOM (keeping caret offsets exact). Multiple/edge
   // spaces are normalised on blur.
-  return (col.textContent || '').replace(/\n+/g, ' ');
+  return (col.textContent || '').replace(/\n+/g, ' ').replace(/﻿/g, '');
 }
 
 // Apply an edit directly to the canonical sourceText and re-render, WITHOUT
@@ -1377,6 +1377,12 @@ function attachEditing(col) {
   col.addEventListener('input', () => {
     // Only reached for composition or the flatten fallback (controlled edits
     // preventDefault, so no input fires for them).
+    // iOS Safari sometimes fires 'input' after a beforeinput that called
+    // preventDefault. Guard: if the column is still in the rendered (multi-div)
+    // state the controlled path already handled the edit — skip this event to
+    // prevent a spurious render() from cancelling the legitimate one.
+    const isFlat = col.childNodes.length === 1 && col.firstChild?.nodeType === Node.TEXT_NODE;
+    if (!isFlat && !composingText) return;
     sourceText = readPlainEdit(col);
     if (composingText) { updateEmptyState(); updateURL(); return; }
     restoreEditScroll();
