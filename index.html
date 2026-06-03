@@ -1390,7 +1390,10 @@ function attachEditing(col) {
     e.preventDefault();
     const scroller = scrollContainerFor(col);
     const top = scroller ? scroller.scrollTop : null;
-    if (document.activeElement !== col) col.focus({ preventScroll: true });
+    // Always call focus (even if already focused). On iOS, calling focus()
+    // resets the browser's internal touch-selection state so the addRange()
+    // below is not overridden. On other browsers it is a no-op.
+    col.focus({ preventScroll: true });
     if (scroller && top != null) scroller.scrollTop = top;
     const sel = window.getSelection();
     sel.removeAllRanges(); sel.addRange(range);
