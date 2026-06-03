@@ -863,6 +863,11 @@ let frenchSpacing = false;
 let colWidthInitialized = false; // snaps to min once after each text/font change
 
 let renderTimer = null, renderId = 0;
+function _dbg(msg) {
+  let el = document.getElementById('_dbg');
+  if (!el) { el = document.createElement('pre'); el.id = '_dbg'; el.style.cssText = 'position:fixed;bottom:60px;left:0;right:0;background:rgba(0,0,0,.85);color:#0f0;font-size:9px;padding:4px;z-index:9999;max-height:120px;overflow:auto;pointer-events:none'; document.body.appendChild(el); }
+  el.textContent = msg + '\n' + el.textContent.slice(0, 800);
+}
 
 function detectLang(text) {
   if (/[஀-௿]/.test(text)) return 'ta';
@@ -1290,7 +1295,7 @@ function handleControlledInput(col, e) {
   const it = e.inputType || '';
   const isInsert = it.startsWith('insert');
   const isDelete = it.startsWith('delete');
-  if (!isInsert && !isDelete) return false; // formatting / history / unknown → fallback
+  if (!isInsert && !isDelete) { _dbg('[hci] skip type='+it); return false; }
 
   // The exact source range the edit affects (the browser computes this, honouring
   // grapheme clusters), falling back to the current selection.
@@ -1314,12 +1319,13 @@ function handleControlledInput(col, e) {
       data = (e.dataTransfer ? e.dataTransfer.getData('text/plain') : (e.data ?? '')).replace(/\s+/g, ' ');
     } else {
       data = e.data ?? '';
-      if (!data) return false; // data carried elsewhere (e.g. some IME paths) → fallback
+      if (!data) { _dbg('[hci] skip nodata it='+it); return false; }
     }
   } else if (start === end) {
-    return false; // delete with no resolved range → fallback (browser knows best)
+    { _dbg('[hci] skip del s=e='+start); return false; } // delete with no resolved range → fallback (browser knows best)
   }
 
+  _dbg('[hci] '+it+' data='+JSON.stringify(data)+' s='+start+' e='+end+' len='+sourceText.length);
   e.preventDefault();
   sourceText = sourceText.slice(0, start) + data + sourceText.slice(end);
   pendingEditCaret = { col, offset: start + data.length };
@@ -1341,6 +1347,10 @@ function handleControlledInput(col, e) {
 // handler. The scroll position is captured before the flatten and restored
 // after the rebuild so the view doesn't jump.
 function attachEditing(col) {
+  // Set to true when handleControlledInput succeeds (e.preventDefault called).
+  // Lets the input handler detect and discard the spurious 'input' event that
+  // iOS Safari sometimes fires after a beforeinput whose default was prevented.
+  let controlledEditPending = false;
   // A click that misses the line text — in the right-hand gutter (on/around the
   // wdth label in the Stretchy column), or below the last line — should drop the
   // caret at the END of the nearest line, not vanish into the margin number or do
@@ -1368,9 +1378,11 @@ function attachEditing(col) {
   // it back — this is the only remaining use of flattening.
   col.addEventListener('compositionstart', () => { composingText = true; captureEditScroll(); flattenToPlain(col); });
   col.addEventListener('beforeinput', e => {
+    controlledEditPending = false; // clear stale flag from any prior controlled edit
     if (e.isComposing) return;                  // composition: handled via the flatten path
-    if (handleControlledInput(col, e)) return;  // edited sourceText directly, DOM untouched
+    if (handleControlledInput(col, e)) { controlledEditPending = true; return; }
     // Rare/unhandled input types (undo, formatting, …): fall back to flattening.
+    _dbg('[bi-fall] '+e.inputType+' data='+JSON.stringify(e.data));
     captureEditScroll();
     flattenToPlain(col);
   });
@@ -1378,11 +1390,11 @@ function attachEditing(col) {
     // Only reached for composition or the flatten fallback (controlled edits
     // preventDefault, so no input fires for them).
     // iOS Safari sometimes fires 'input' after a beforeinput that called
-    // preventDefault. Guard: if the column is still in the rendered (multi-div)
-    // state the controlled path already handled the edit — skip this event to
-    // prevent a spurious render() from cancelling the legitimate one.
-    const isFlat = col.childNodes.length === 1 && col.firstChild?.nodeType === Node.TEXT_NODE;
-    if (!isFlat && !composingText) return;
+    // preventDefault — block that spurious event using the flag set above.
+    // (On iOS, beforeinput may not fire at all for some caret positions, so we
+    // cannot rely on isFlat: the flag correctly distinguishes the two cases.)
+    _dbg('[input] pending='+controlledEditPending+' comp='+composingText+' len='+sourceText.length);
+    if (controlledEditPending) { controlledEditPending = false; return; }
     sourceText = readPlainEdit(col);
     if (composingText) { updateEmptyState(); updateURL(); return; }
     restoreEditScroll();
