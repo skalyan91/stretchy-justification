@@ -984,7 +984,7 @@ function getSourceText() {
 }
 
 function setSourceText(text) {
-  sourceText = (text || '').replace(/\s+/g, ' ');
+  sourceText = (text || '').replace(/\n+/g, ' ');
   colRegular.textContent = sourceText;
   setEmptyState(!sourceText);
 }
@@ -2590,6 +2590,12 @@ function reconstructLineSources(lines, src) {
         cur++;
       } else if (ch === '-' && src[cur] !== '-') {
         addedHyphen = true; // hyphenation hyphen — not in the source
+      } else if (src[cur] === ' ') {
+        // Layout may normalize consecutive source spaces to one — skip extra
+        // source spaces to re-sync with the line string.
+        while (src[cur] === ' ') cur++;
+        if (src[cur] === ch) { cur++; }
+        else { break; }
       } else {
         // Defensive: drift means reconstruction failed; stop matching this line.
         break;
