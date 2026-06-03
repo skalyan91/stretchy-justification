@@ -1071,7 +1071,16 @@ function nodeOffsetAt(col, target) {
   while (walker.nextNode()) {
     const node = walker.currentNode;
     const len = node.textContent.length;
-    if (offset + len >= target) return { node, offset: Math.max(0, target - offset) };
+    if (offset + len >= target) {
+      const nodeOff = Math.max(0, target - offset);
+      // A boundary-space span (.bsp) has zero layout size; placing the caret
+      // at its end keeps the cursor visually stuck. Advance to the next text
+      // node (the first character of the next line) so the caret moves.
+      if (nodeOff === len && node.parentElement?.closest('.bsp')) {
+        if (walker.nextNode()) return { node: walker.currentNode, offset: 0 };
+      }
+      return { node, offset: nodeOff };
+    }
     offset += len; last = node;
   }
   return last ? { node: last, offset: last.textContent.length } : null;
