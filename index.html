@@ -2601,11 +2601,13 @@ function appendLineBoundary(el, info, isLast, tail, spW) {
   }
   if (isLast) {
     const trailing = (info.boundarySpace ? ' ' : '') + (tail || '');
-    // Trailing spaces rendered as a plain text node so iOS Safari can place the
-    // caret at the natural end-of-text-node position, which it handles reliably.
-    // display:inline-block .sp spans leave iOS unable to advance the caret past
-    // them.  The last line is never justified, so explicit span widths add nothing.
-    if (trailing.length > 0) el.appendChild(document.createTextNode(trailing));
+    for (let k = 0; k < trailing.length; k++) {
+      const sp = document.createElement('span');
+      sp.className = 'sp';
+      sp.style.cssText = `display:inline-block;vertical-align:top;width:${spW.toFixed(3)}px`;
+      sp.appendChild(document.createTextNode(' '));
+      el.appendChild(sp);
+    }
   } else if (info.boundarySpace) {
     const bsp = document.createElement('span');
     bsp.className = 'bsp';
