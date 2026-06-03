@@ -1355,17 +1355,11 @@ function attachEditing(col) {
   // caret at the END of the nearest line, not vanish into the margin number or do
   // nothing. Attached to the whole panel so clicks in the empty area below the
   // text (outside the column box) are handled too. Never scrolls.
-  // iOS places the caret at the END of a contenteditable on every tap — both
-  // when focusing for the first time and on subsequent taps — regardless of where
-  // the finger landed. This happens during the synthetic mousedown iOS fires after
-  // touchend, so we can't prevent it by acting synchronously in touchend.
-  //
-  // Fix: call caretRangeFromPoint SYNCHRONOUSLY in touchend (while the viewport
-  // coordinates are still valid) to get a DOM Range (node + offset, not pixels),
-  // then apply that range in a setTimeout after iOS has placed the caret at the
-  // wrong position. The Range survives any scroll/keyboard shift that follows
-  // touchend because it holds a DOM position, not viewport coordinates.
-  //
+  // iOS Safari snaps the caret to the end of a contenteditable on every tap,
+  // both on first focus and on subsequent taps. This snapping is part of iOS's
+  // own touch-input caret pipeline, which runs after touchend. Calling
+  // e.preventDefault() on touchend suppresses that pipeline, so we can place
+  // the caret ourselves via caretRangeFromPoint without iOS overriding us.
   // Gutter taps (outside the line elements) are left to the mousedown handler below.
   let _touchStartX = 0, _touchStartY = 0;
   col.addEventListener('touchstart', e => {
@@ -1382,7 +1376,7 @@ function attachEditing(col) {
         Math.abs(touch.clientY - _touchStartY) > 10) return;
     const lineSel = col === colStretchy ? '.line' : '[lang]';
     if (!e.target.closest(lineSel)) return; // gutter tap — let mousedown handle it
-    // Compute the range now, while touch coordinates map to correct DOM positions.
+    // Compute range while touch coordinates are still viewport-correct.
     const range = document.caretRangeFromPoint?.(touch.clientX, touch.clientY)
       ?? (() => {
           const p = document.caretPositionFromPoint?.(touch.clientX, touch.clientY);
@@ -1392,11 +1386,14 @@ function attachEditing(col) {
           return r;
         })();
     if (!range) return;
-    // Apply after iOS's synthetic events have incorrectly moved the caret.
-    setTimeout(() => {
-      const sel = window.getSelection();
-      sel.removeAllRanges(); sel.addRange(range);
-    }, 0);
+    // Suppress iOS's touch-input caret pipeline so our placement wins.
+    e.preventDefault();
+    const scroller = scrollContainerFor(col);
+    const top = scroller ? scroller.scrollTop : null;
+    if (document.activeElement !== col) col.focus({ preventScroll: true });
+    if (scroller && top != null) scroller.scrollTop = top;
+    const sel = window.getSelection();
+    sel.removeAllRanges(); sel.addRange(range);
   });
   const panel = col.closest('.panel') || col;
   panel.addEventListener('mousedown', e => {
