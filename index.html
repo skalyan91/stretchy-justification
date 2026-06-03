@@ -2440,7 +2440,7 @@ function updateURL() {
   const p = new URLSearchParams();
   const text = getSourceText();
   const lang = detectLang(text);
-  sessionStorage.setItem(`sourceText_${lang}`, text);
+  localStorage.setItem(`sourceText_${lang}`, text);
   if (lang === 'ta') p.set('preset', 'ta');
   else if (lang === 'ar') p.set('preset', 'ar');
   p.set('fs', +fsRange.value);
@@ -2601,17 +2601,11 @@ function appendLineBoundary(el, info, isLast, tail, spW) {
   }
   if (isLast) {
     const trailing = (info.boundarySpace ? ' ' : '') + (tail || '');
-    for (let k = 0; k < trailing.length; k++) {
-      const sp = document.createElement('span');
-      sp.className = 'sp';
-      sp.style.cssText = `display:inline-block;vertical-align:top;width:${spW.toFixed(3)}px`;
-      sp.appendChild(document.createTextNode(' '));
-      el.appendChild(sp);
-    }
-    // Empty text node after trailing spans so nodeOffsetAt can return a text-node
-    // position rather than an element-level one — iOS Safari needs this to
-    // correctly place the caret after a trailing space.
-    if (trailing.length > 0) el.appendChild(document.createTextNode(''));
+    // Trailing spaces rendered as a plain text node so iOS Safari can place the
+    // caret at the natural end-of-text-node position, which it handles reliably.
+    // display:inline-block .sp spans leave iOS unable to advance the caret past
+    // them.  The last line is never justified, so explicit span widths add nothing.
+    if (trailing.length > 0) el.appendChild(document.createTextNode(trailing));
   } else if (info.boundarySpace) {
     const bsp = document.createElement('span');
     bsp.className = 'bsp';
@@ -2810,7 +2804,7 @@ function showPH(msg) {
   const PRESET_MAP = { en: ENGLISH, ta: TAMIL, ar: ARABIC };
   const p = _urlParams;
   const initLang = p.preset === 'ta' ? 'ta' : p.preset === 'ar' ? 'ar' : 'en';
-  const sessionText = sessionStorage.getItem(`sourceText_${initLang}`);
+  const sessionText = localStorage.getItem(`sourceText_${initLang}`);
   const initialText = p.text ?? (sessionText !== null ? sessionText : PRESET_MAP[initLang]);
   setSourceText(initialText);
   if (p.fs)  { fsRange.value = p.fs;  fsNum.value = p.fs;  hbFsNum.value = p.fs; }
