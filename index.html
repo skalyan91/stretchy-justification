@@ -1355,31 +1355,43 @@ function attachEditing(col) {
   // caret at the END of the nearest line, not vanish into the margin number or do
   // nothing. Attached to the whole panel so clicks in the empty area below the
   // text (outside the column box) are handled too. Never scrolls.
-  // On iOS, the first tap on an unfocused contenteditable focuses it but places
-  // the caret at the end regardless of where the finger landed. Intercept touchend
-  // while the column is unfocused, focus manually, then use caretRangeFromPoint to
-  // land the caret at the actual touch coordinate. e.preventDefault() suppresses
-  // the synthetic mousedown so the two handlers don't fight.
+  // iOS places the caret at the END of a contenteditable on every tap — both
+  // when focusing for the first time and on subsequent taps — regardless of where
+  // the finger landed. This happens synchronously during the synthetic mousedown
+  // that iOS fires after touchend. Fix: for taps that land on the text (not the
+  // gutter), defer caret placement to a setTimeout so it runs after iOS has set
+  // the wrong position, then override it with caretRangeFromPoint.
+  // Gutter taps (outside the line elements) are left to the mousedown handler below.
+  let _touchStartX = 0, _touchStartY = 0;
+  col.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+      _touchStartX = e.touches[0].clientX;
+      _touchStartY = e.touches[0].clientY;
+    }
+  }, { passive: true });
   col.addEventListener('touchend', e => {
-    if (document.activeElement === col) return; // already focused — browser handles fine
+    if (e.changedTouches.length !== 1) return;
     const touch = e.changedTouches[0];
-    e.preventDefault();
-    const scroller = scrollContainerFor(col);
-    const top = scroller ? scroller.scrollTop : null;
-    col.focus({ preventScroll: true });
-    if (scroller && top != null) scroller.scrollTop = top;
-    const range = document.caretRangeFromPoint?.(touch.clientX, touch.clientY)
-      ?? (document.caretPositionFromPoint
-          ? (() => {
-              const p = document.caretPositionFromPoint(touch.clientX, touch.clientY);
-              const r = document.createRange();
-              r.setStart(p.offsetNode, p.offset); r.collapse(true);
-              return r;
-            })()
-          : null);
-    if (!range) return;
-    const sel = window.getSelection();
-    sel.removeAllRanges(); sel.addRange(range);
+    // Ignore scrolls/drags — only intercept taps.
+    if (Math.abs(touch.clientX - _touchStartX) > 10 ||
+        Math.abs(touch.clientY - _touchStartY) > 10) return;
+    const lineSel = col === colStretchy ? '.line' : '[lang]';
+    if (!e.target.closest(lineSel)) return; // gutter tap — let mousedown handle it
+    const x = touch.clientX, y = touch.clientY;
+    setTimeout(() => {
+      const range = document.caretRangeFromPoint?.(x, y)
+        ?? (document.caretPositionFromPoint
+            ? (() => {
+                const p = document.caretPositionFromPoint(x, y);
+                const r = document.createRange();
+                r.setStart(p.offsetNode, p.offset); r.collapse(true);
+                return r;
+              })()
+            : null);
+      if (!range) return;
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(range);
+    }, 0);
   });
   const panel = col.closest('.panel') || col;
   panel.addEventListener('mousedown', e => {
