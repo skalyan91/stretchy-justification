@@ -2439,9 +2439,10 @@ const _urlParams = readURLParams();
 function updateURL() {
   const p = new URLSearchParams();
   const text = getSourceText();
-  if      (text === ENGLISH) p.set('preset', 'en');
-  else if (text === TAMIL)   p.set('preset', 'ta');
-  else if (text === ARABIC)  p.set('preset', 'ar');
+  const lang = detectLang(text);
+  sessionStorage.setItem(`sourceText_${lang}`, text);
+  if (lang === 'ta') p.set('preset', 'ta');
+  else if (lang === 'ar') p.set('preset', 'ar');
   p.set('fs', +fsRange.value);
   p.set('cw', +cwRange.value);
   if (!highlightSpaces)                 p.set('highlight', '0');
@@ -2804,7 +2805,9 @@ function showPH(msg) {
 {
   const PRESET_MAP = { en: ENGLISH, ta: TAMIL, ar: ARABIC };
   const p = _urlParams;
-  const initialText = (p.preset && PRESET_MAP[p.preset]) ?? p.text ?? ENGLISH;
+  const initLang = p.preset === 'ta' ? 'ta' : p.preset === 'ar' ? 'ar' : 'en';
+  const sessionText = sessionStorage.getItem(`sourceText_${initLang}`);
+  const initialText = p.text ?? (sessionText !== null ? sessionText : PRESET_MAP[initLang]);
   setSourceText(initialText);
   if (p.fs)  { fsRange.value = p.fs;  fsNum.value = p.fs;  hbFsNum.value = p.fs; }
   highlightSpaces        = !!(p.highlight ?? true);
