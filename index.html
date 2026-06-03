@@ -863,11 +863,6 @@ let frenchSpacing = false;
 let colWidthInitialized = false; // snaps to min once after each text/font change
 
 let renderTimer = null, renderId = 0;
-function _dbg(msg) {
-  let el = document.getElementById('_dbg');
-  if (!el) { el = document.createElement('pre'); el.id = '_dbg'; el.style.cssText = 'position:fixed;bottom:60px;left:0;right:0;background:rgba(0,0,0,.85);color:#0f0;font-size:9px;padding:4px;z-index:9999;max-height:120px;overflow:auto;pointer-events:none'; document.body.appendChild(el); }
-  el.textContent = msg + '\n' + el.textContent.slice(0, 800);
-}
 
 function detectLang(text) {
   if (/[஀-௿]/.test(text)) return 'ta';
@@ -1295,7 +1290,7 @@ function handleControlledInput(col, e) {
   const it = e.inputType || '';
   const isInsert = it.startsWith('insert');
   const isDelete = it.startsWith('delete');
-  if (!isInsert && !isDelete) { _dbg('[hci] skip type='+it); return false; }
+  if (!isInsert && !isDelete) return false; // formatting / history / unknown → fallback
 
   // The exact source range the edit affects (the browser computes this, honouring
   // grapheme clusters), falling back to the current selection.
@@ -1319,13 +1314,12 @@ function handleControlledInput(col, e) {
       data = (e.dataTransfer ? e.dataTransfer.getData('text/plain') : (e.data ?? '')).replace(/\s+/g, ' ');
     } else {
       data = e.data ?? '';
-      if (!data) { _dbg('[hci] skip nodata it='+it); return false; }
+      if (!data) return false; // data carried elsewhere (e.g. some IME paths) → fallback
     }
   } else if (start === end) {
-    { _dbg('[hci] skip del s=e='+start); return false; } // delete with no resolved range → fallback (browser knows best)
+    return false; // delete with no resolved range → fallback (browser knows best)
   }
 
-  _dbg('[hci] '+it+' data='+JSON.stringify(data)+' s='+start+' e='+end+' len='+sourceText.length);
   e.preventDefault();
   sourceText = sourceText.slice(0, start) + data + sourceText.slice(end);
   pendingEditCaret = { col, offset: start + data.length };
@@ -1382,7 +1376,6 @@ function attachEditing(col) {
     if (e.isComposing) return;                  // composition: handled via the flatten path
     if (handleControlledInput(col, e)) { controlledEditPending = true; return; }
     // Rare/unhandled input types (undo, formatting, …): fall back to flattening.
-    _dbg('[bi-fall] '+e.inputType+' data='+JSON.stringify(e.data));
     captureEditScroll();
     flattenToPlain(col);
   });
@@ -1393,7 +1386,6 @@ function attachEditing(col) {
     // preventDefault — block that spurious event using the flag set above.
     // (On iOS, beforeinput may not fire at all for some caret positions, so we
     // cannot rely on isFlat: the flag correctly distinguishes the two cases.)
-    _dbg('[input] pending='+controlledEditPending+' comp='+composingText+' len='+sourceText.length);
     if (controlledEditPending) { controlledEditPending = false; return; }
     sourceText = readPlainEdit(col);
     if (composingText) { updateEmptyState(); updateURL(); return; }
