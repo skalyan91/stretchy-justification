@@ -462,6 +462,53 @@
       box-shadow: 0 4px 16px rgba(0,0,0,0.12);
     }
     .bar-drawer.open { display: block; }
+
+    /* ── Font modal ──────────────────────────────────── */
+    .font-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: rgba(0,0,0,0.35);
+      align-items: center;
+      justify-content: center;
+    }
+    .font-modal-overlay.open { display: flex; }
+    .font-modal {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px 20px 20px;
+      width: min(320px, calc(100vw - 32px));
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .font-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .font-modal-title {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .font-modal-close {
+      background: none;
+      border: none;
+      font-size: 15px;
+      line-height: 1;
+      cursor: pointer;
+      color: var(--muted);
+      padding: 2px 5px;
+      border-radius: 3px;
+    }
+    .font-modal-close:hover { color: var(--fg); }
+
     .bar-drawer-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -613,6 +660,7 @@
   <button class="bar-action-btn" id="hb-reset-btn">Reset</button>
   <div class="bar-sep"></div>
   <button class="bar-drawer-btn" id="settings-drawer-btn" aria-expanded="false">Settings ▾</button>
+  <button class="bar-drawer-btn" id="font-modal-btn">Font</button>
 </div>
 <div class="bar-drawer" id="settings-drawer">
   <div class="bar-drawer-grid">
@@ -632,11 +680,6 @@
           French spacing
         </label>
       </div>
-      <div class="s-label" style="margin-bottom:8px">Font</div>
-      <div class="btn-row" style="margin-bottom:8px">
-        <button class="btn btn-outline" id="hb-upload-btn">Upload override…</button>
-      </div>
-      <div id="hb-font-info" style="font-size:11px;line-height:1.6;color:var(--muted)">Loading…</div>
     </div>
     <div class="bar-drawer-col">
       <div class="s-label" style="margin-bottom:8px">Width axis subset</div>
@@ -656,6 +699,20 @@
     </div>
   </div>
 </div>
+
+<div class="font-modal-overlay" id="font-modal-overlay">
+  <div class="font-modal">
+    <div class="font-modal-header">
+      <span class="font-modal-title">Font</span>
+      <button class="font-modal-close" id="font-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-outline" id="hb-upload-btn">Upload override…</button>
+    </div>
+    <div id="hb-font-info" style="font-size:11px;line-height:1.6;color:var(--muted)">Loading…</div>
+  </div>
+</div>
+
 <aside>
   <div class="sidebar-header">
     <div class="sidebar-header-row">
@@ -855,6 +912,9 @@ const hbUploadBtn       = get('hb-upload-btn');
 const hbFontInfoEl      = get('hb-font-info');
 const settingsDrawerBtn = get('settings-drawer-btn');
 const settingsDrawerEl  = get('settings-drawer');
+const fontModalBtn      = get('font-modal-btn');
+const fontModalOverlay  = get('font-modal-overlay');
+const fontModalClose    = get('font-modal-close');
 const hbWdthLoRange = get('hb-wdth-lo-range');
 const hbWdthHiRange = get('hb-wdth-hi-range');
 const hbWdthLoNum   = get('hb-wdth-lo-num');
@@ -885,6 +945,7 @@ function closeAllDrawers() {
   settingsDrawerEl.classList.remove('open');
   settingsDrawerBtn.classList.remove('open');
   settingsDrawerBtn.setAttribute('aria-expanded', 'false');
+  fontModalOverlay?.classList.remove('open');
 }
 function toggleDrawer() {
   const opening = !settingsDrawerEl.classList.contains('open');
@@ -901,6 +962,13 @@ document.addEventListener('click', e => {
   if (!settingsDrawerEl.contains(e.target) && !settingsDrawerBtn.contains(e.target))
     closeAllDrawers();
 });
+
+// ── Font modal helpers ────────────────────────────────
+function openFontModal()  { closeAllDrawers(); fontModalOverlay.classList.add('open'); }
+function closeFontModal() { fontModalOverlay.classList.remove('open'); }
+fontModalBtn.addEventListener('click', e => { e.stopPropagation(); openFontModal(); });
+fontModalClose.addEventListener('click', closeFontModal);
+fontModalOverlay.addEventListener('click', e => { if (e.target === fontModalOverlay) closeFontModal(); });
 
 // ── Editable text source ──────────────────────────────
 // The canonical source text lives in this variable, NOT in the DOM.
@@ -1003,7 +1071,16 @@ function nodeOffsetAt(col, target) {
   while (walker.nextNode()) {
     const node = walker.currentNode;
     const len = node.textContent.length;
-    if (offset + len >= target) return { node, offset: Math.max(0, target - offset) };
+    if (offset + len >= target) {
+      const nodeOff = Math.max(0, target - offset);
+      // A boundary-space span (.bsp) has zero layout size; placing the caret
+      // at its end keeps the cursor visually stuck. Advance to the next text
+      // node (the first character of the next line) so the caret moves.
+      if (nodeOff === len && node.parentElement?.closest('.bsp')) {
+        if (walker.nextNode()) return { node: walker.currentNode, offset: 0 };
+      }
+      return { node, offset: nodeOff };
+    }
     offset += len; last = node;
   }
   return last ? { node: last, offset: last.textContent.length } : null;
