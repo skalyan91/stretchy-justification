@@ -1076,9 +1076,17 @@ function nodeOffsetAt(col, target) {
       // boundary-space span) or .sp (inline-block space span) causes iOS Safari
       // to render the cursor before the span rather than after it. Advance to
       // the next text node so the caret lands on the first character of the
-      // following word/line, which iOS positions correctly.
+      // following word/line, which iOS positions correctly. When there is no
+      // following text node (e.g. a trailing space at end of text), fall back
+      // to an element-level position after the span — also rendered correctly
+      // by iOS, and round-trips cleanly through offsetAtPoint.
       if (nodeOff === len && node.parentElement?.closest('.bsp, .sp')) {
         if (walker.nextNode()) return { node: walker.currentNode, offset: 0 };
+        const span = node.parentElement;
+        let idx = 0;
+        let sib = span;
+        while ((sib = sib.previousSibling)) idx++;
+        return { node: span.parentNode, offset: idx + 1 };
       }
       return { node, offset: nodeOff };
     }
