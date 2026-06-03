@@ -1366,6 +1366,7 @@ function attachEditing(col) {
   // Gutter taps (outside the line elements) still go through the gutter path below.
   let _touchStartX = 0, _touchStartY = 0;
   let _touchTextTap = null; // {x, y} set when a tap lands on text; cleared by mousedown
+  let _caretHideTimer = null;
   col.addEventListener('touchstart', e => {
     if (e.touches.length === 1) {
       _touchStartX = e.touches[0].clientX;
@@ -1379,10 +1380,17 @@ function attachEditing(col) {
         Math.abs(touch.clientY - _touchStartY) > 10) return;
     const lineSel = col === colStretchy ? '.line' : '[lang]';
     if (!e.target.closest(lineSel)) return; // gutter tap — let mousedown handle it
-    // Record where the finger tapped. The mousedown handler will use this to
-    // place the caret after iOS has finished its own (wrong) normalisation.
+    // Record tap coords for the mousedown handler, which fires after iOS has
+    // snapped the caret to end-of-line. Hide the caret immediately so the user
+    // never sees the wrong snap position — it reappears in mousedown at the
+    // correct location.
     _touchTextTap = { x: touch.clientX, y: touch.clientY };
-    setTimeout(() => { _touchTextTap = null; }, 500); // safety clear
+    col.style.caretColor = 'transparent';
+    clearTimeout(_caretHideTimer);
+    _caretHideTimer = setTimeout(() => {
+      _touchTextTap = null;
+      col.style.caretColor = '';
+    }, 500); // safety restore if mousedown never fires
   });
   const panel = col.closest('.panel') || col;
   panel.addEventListener('mousedown', e => {
@@ -1393,6 +1401,7 @@ function attachEditing(col) {
       if (_touchTextTap) {
         const { x, y } = _touchTextTap;
         _touchTextTap = null;
+        clearTimeout(_caretHideTimer);
         e.preventDefault(); // stop any further browser caret placement
         const scroller = scrollContainerFor(col);
         const top = scroller ? scroller.scrollTop : null;
@@ -1406,9 +1415,10 @@ function attachEditing(col) {
               r.setStart(p.offsetNode, p.offset); r.collapse(true);
               return r;
             })();
-        if (!range) return;
+        if (!range) { col.style.caretColor = ''; return; }
         const sel = window.getSelection();
         sel.removeAllRanges(); sel.addRange(range);
+        col.style.caretColor = ''; // reveal caret at correct position
       }
       return; // desktop click: let browser place caret normally
     }
