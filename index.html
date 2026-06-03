@@ -1654,10 +1654,6 @@ wdthHiNum.addEventListener('change', () => {
 });
 
 // ── Bar control event listeners ──────────────────────
-hbFsNum.addEventListener('focus', () => {
-  const len = hbFsNum.value.length;
-  hbFsNum.setSelectionRange(len, len);
-});
 hbFsNum.addEventListener('change', () => {
   const v = Math.max(1, Math.round(+hbFsNum.value || 1));
   hbFsNum.value = v; fsNum.value = v; fsRange.value = v;
