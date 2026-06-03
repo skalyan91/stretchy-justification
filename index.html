@@ -1444,6 +1444,10 @@ function attachEditing(col) {
     const line = lineAtClientY(col, e.clientY);
     if (!line) return;
     e.preventDefault();
+    // Hide caret immediately so the user never sees it at the wrong position
+    // between now and when we place it correctly below.
+    col.style.caretColor = 'transparent';
+    clearTimeout(_caretHideTimer);
     // Fully scroll-neutral: focus({preventScroll}) (a plain focus() scrolls the
     // large editable into view, jumping to the top) and restore around the
     // caret placement.
@@ -1478,6 +1482,7 @@ function attachEditing(col) {
       placeCaretAtLineEnd(col, line);
     }
     if (scroller && top != null) scroller.scrollTop = top;
+    requestAnimationFrame(() => { col.style.caretColor = ''; });
   });
   // IME composition needs a real plain-text layer (the model's spans interfere
   // with composition), so for composition we still flatten to plain text and read
