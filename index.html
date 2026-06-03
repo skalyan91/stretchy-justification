@@ -1311,7 +1311,7 @@ function handleControlledInput(col, e) {
   pendingEditCaret = { col, offset: start + data.length };
   updateEmptyState();
   clearTimeout(renderTimer);
-  saveSession();
+  updateURL();
   render();
   return true;
 }
@@ -1364,11 +1364,11 @@ function attachEditing(col) {
     // Only reached for composition or the flatten fallback (controlled edits
     // preventDefault, so no input fires for them).
     sourceText = readPlainEdit(col);
-    if (composingText) { updateEmptyState(); saveSession(); return; }
+    if (composingText) { updateEmptyState(); updateURL(); return; }
     restoreEditScroll();
     updateEmptyState();
     clearTimeout(renderTimer);
-    saveSession();
+    updateURL();
     render();
   });
   col.addEventListener('compositionend', () => {
@@ -1376,13 +1376,13 @@ function attachEditing(col) {
     sourceText = readPlainEdit(col);
     updateEmptyState();
     clearTimeout(renderTimer);
-    saveSession();
+    updateURL();
     render();
   });
   col.addEventListener('blur', () => {
     // Don't normalise/trim here — preserve the text exactly as typed (including
     // trailing spaces). The model is already current, so no re-render is needed.
-    saveSession();
+    updateURL();
   });
   // Plain-text paste, applied controlled (no flatten). preventDefault stops the
   // native paste (and its beforeinput), so this is the single paste path.
@@ -1396,7 +1396,7 @@ function attachEditing(col) {
     pendingEditCaret = { col, offset: offs.start + text.length };
     updateEmptyState();
     clearTimeout(renderTimer);
-    saveSession();
+    updateURL();
     render();
   });
 }
@@ -1407,7 +1407,7 @@ attachEditing(colStretchy);
 function doClear() {
   setSourceText('');
   colStretchy.innerHTML = '';
-  saveSession();
+  updateURL();
 }
 function doReset() {
   // Detect language from current text; fall back to lang-select value on mobile
@@ -1448,7 +1448,7 @@ async function loadBundledFonts() {
     ]);
     fontsReady = true;
     updateFontInfo();
-    applySavedSession();
+    applyURLWdth();
     scheduleRender();
   } catch (e) {
     fontInfoEl.innerHTML = '<span style="color:var(--err)">Font load failed. Upload a font to continue.</span>';
@@ -2412,47 +2412,63 @@ async function layoutTamilStretchy(text, colW, sz, font) {
   return lines.filter(Boolean);
 }
 
-// ── Session persistence ───────────────────────────────
-const SESSION_KEY = 'pretext-session';
-let _savedSession = null;
-try { _savedSession = JSON.parse(sessionStorage.getItem(SESSION_KEY)); } catch {}
+// ── URL routing ───────────────────────────────────────
+function readURLParams() {
+  const p = new URLSearchParams(location.search);
+  const out = {};
+  if (p.has('preset')) out.preset = p.get('preset');
+  if (p.has('text'))   out.text   = p.get('text');
+  for (const k of ['fs','cw','enWdthLo','enWdthHi','taWdthLo','taWdthHi','arWdthLo','arWdthHi']) {
+    const v = p.get(k); if (v != null && !isNaN(+v)) out[k] = +v;
+  }
+  for (const k of ['highlight','rivers','french']) {
+    if (p.has(k)) out[k] = p.get(k) !== '0';
+  }
+  return out;
+}
+const _urlParams = readURLParams();
 
-function saveSession() {
-  sessionStorage.setItem(SESSION_KEY, JSON.stringify({
-    text:      getSourceText(),
-    fs:        +fsRange.value,
-    cw:        +cwRange.value,
-    highlight: highlightCb.checked,
-    rivers:    riversCb.checked,
-    french:    frenchCb.checked,
-    enWdthLo:  enFont.wdthLo, enWdthHi: enFont.wdthHi,
-    taWdthLo:  taFont.wdthLo, taWdthHi: taFont.wdthHi,
-    arWdthLo:  arFont.wdthLo, arWdthHi: arFont.wdthHi,
-  }));
+function updateURL() {
+  const p = new URLSearchParams();
+  const text = getSourceText();
+  if      (text === ENGLISH) p.set('preset', 'en');
+  else if (text === TAMIL)   p.set('preset', 'ta');
+  else if (text === ARABIC)  p.set('preset', 'ar');
+  p.set('fs', +fsRange.value);
+  p.set('cw', +cwRange.value);
+  if (!highlightSpaces)                 p.set('highlight', '0');
+  if (showRivers)                       p.set('rivers', '1');
+  if (frenchSpacing)                    p.set('french', '1');
+  if (enFont.wdthLo !== enFont.wdthMin) p.set('enWdthLo', enFont.wdthLo);
+  if (enFont.wdthHi !== enFont.wdthMax) p.set('enWdthHi', enFont.wdthHi);
+  if (taFont.wdthLo !== taFont.wdthMin) p.set('taWdthLo', taFont.wdthLo);
+  if (taFont.wdthHi !== taFont.wdthMax) p.set('taWdthHi', taFont.wdthHi);
+  if (arFont.wdthLo !== arFont.wdthMin) p.set('arWdthLo', arFont.wdthLo);
+  if (arFont.wdthHi !== arFont.wdthMax) p.set('arWdthHi', arFont.wdthHi);
+  history.replaceState(null, '', '?' + p);
 }
 
 // Called after registerFont() runs (which resets wdthLo/Hi to axis defaults).
-function applySavedSession() {
-  const s = _savedSession;
-  if (!s) return;
+function applyURLWdth() {
+  const p = _urlParams;
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
-  if (s.enWdthLo != null) enFont.wdthLo = clamp(s.enWdthLo, enFont.wdthMin, enFont.wdthDefault);
-  if (s.enWdthHi != null) enFont.wdthHi = clamp(s.enWdthHi, enFont.wdthDefault, enFont.wdthMax);
-  if (s.taWdthLo != null) taFont.wdthLo = clamp(s.taWdthLo, taFont.wdthMin, taFont.wdthDefault);
-  if (s.taWdthHi != null) taFont.wdthHi = clamp(s.taWdthHi, taFont.wdthDefault, taFont.wdthMax);
-  if (s.arWdthLo != null) arFont.wdthLo = clamp(s.arWdthLo, arFont.wdthMin, arFont.wdthDefault);
-  if (s.arWdthHi != null) arFont.wdthHi = clamp(s.arWdthHi, arFont.wdthDefault, arFont.wdthMax);
+  if (p.enWdthLo != null) enFont.wdthLo = clamp(p.enWdthLo, enFont.wdthMin, enFont.wdthDefault);
+  if (p.enWdthHi != null) enFont.wdthHi = clamp(p.enWdthHi, enFont.wdthDefault, enFont.wdthMax);
+  if (p.taWdthLo != null) taFont.wdthLo = clamp(p.taWdthLo, taFont.wdthMin, taFont.wdthDefault);
+  if (p.taWdthHi != null) taFont.wdthHi = clamp(p.taWdthHi, taFont.wdthDefault, taFont.wdthMax);
+  if (p.arWdthLo != null) arFont.wdthLo = clamp(p.arWdthLo, arFont.wdthMin, arFont.wdthDefault);
+  if (p.arWdthHi != null) arFont.wdthHi = clamp(p.arWdthHi, arFont.wdthDefault, arFont.wdthMax);
   updateWdthUI(fontFor(detectLang(getSourceText())));
 }
 
 // ── Render ────────────────────────────────────────────
 function scheduleRender() {
-  saveSession();
+  updateURL();
   clearTimeout(renderTimer);
   renderTimer = setTimeout(render, 60);
 }
 function scheduleWdthRender() {
-  saveSession();
+  updateURL();
   clearTimeout(renderTimer);
   renderTimer = setTimeout(render, 300);
 }
@@ -2778,16 +2794,18 @@ function showPH(msg) {
 
 // ── Init ──────────────────────────────────────────────
 {
-  const initialText = _savedSession?.text ?? ENGLISH;
+  const PRESET_MAP = { en: ENGLISH, ta: TAMIL, ar: ARABIC };
+  const p = _urlParams;
+  const initialText = (p.preset && PRESET_MAP[p.preset]) ?? p.text ?? ENGLISH;
   setSourceText(initialText);
-  if (_savedSession?.fs)  { fsRange.value = _savedSession.fs;  fsNum.value = _savedSession.fs;  hbFsNum.value = _savedSession.fs; }
-  highlightSpaces        = !!(_savedSession?.highlight ?? true);
+  if (p.fs)  { fsRange.value = p.fs;  fsNum.value = p.fs;  hbFsNum.value = p.fs; }
+  highlightSpaces        = !!(p.highlight ?? true);
   highlightCb.checked    = hbHighlightCb.checked = highlightSpaces;
-  showRivers             = !!_savedSession?.rivers;
+  showRivers             = !!p.rivers;
   riversCb.checked       = hbRiversCb.checked    = showRivers;
-  frenchSpacing          = !!_savedSession?.french;
+  frenchSpacing          = !!p.french;
   frenchCb.checked       = hbFrenchCb.checked     = frenchSpacing;
-  if (_savedSession?.cw) { cwRange.value = _savedSession.cw;  cwNum.value = _savedSession.cw;  colWidthInitialized = true; }
+  if (p.cw) { cwRange.value = p.cw;  cwNum.value = p.cw;  colWidthInitialized = true; }
 }
 loadBundledFonts();
 </script>
