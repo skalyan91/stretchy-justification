@@ -1087,7 +1087,11 @@ function nodeOffsetAt(col, target) {
         const allWalker = document.createTreeWalker(col, NodeFilter.SHOW_TEXT);
         allWalker.currentNode = node;
         const caNode = allWalker.nextNode();
-        if (caNode) return { node: caNode, offset: 0 };
+        // Use the END of the .ca text node (not offset 0). iOS normalises
+        // "end of zero-width span" to the element-level position after the span,
+        // which it renders correctly. Offset 0 ("start of span") gets snapped
+        // backwards to the end of the preceding word instead.
+        if (caNode) return { node: caNode, offset: caNode.textContent.length };
         const span = node.parentElement;
         let idx = 0;
         let sib = span;
