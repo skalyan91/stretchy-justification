@@ -984,7 +984,7 @@ function getSourceText() {
 }
 
 function setSourceText(text) {
-  sourceText = (text || '').replace(/\n+/g, ' ');
+  sourceText = (text || '').replace(/\r\n?/g, '\n');
   colRegular.textContent = sourceText;
   setEmptyState(!sourceText);
 }
@@ -1278,11 +1278,10 @@ let composingText = false;
 let pendingEditCaret = null;
 
 function readPlainEdit(col) {
-  // col is the plain-text edit layer here. Only normalise newlines to spaces —
-  // do NOT collapse space runs or trim, so the edited text stays character-for-
-  // character equal to the DOM (keeping caret offsets exact). Multiple/edge
-  // spaces are normalised on blur.
-  return (col.textContent || '').replace(/\n+/g, ' ').replace(/﻿/g, '');
+  // col is the plain-text edit layer here. Only normalise CR/CRLF — do NOT
+  // collapse space or newline runs, so the edited text stays character-for-
+  // character equal to the DOM (keeping caret offsets exact).
+  return (col.textContent || '').replace(/\r\n?/g, '\n').replace(/﻿/g, '');
 }
 
 // Apply an edit directly to the canonical sourceText and re-render, WITHOUT
@@ -1313,9 +1312,10 @@ function handleControlledInput(col, e) {
   let data = '';
   if (isInsert) {
     if (it === 'insertParagraph' || it === 'insertLineBreak') {
-      data = ' '; // newlines collapse to a single space in this single-paragraph model
+      data = '\n';
     } else if (it === 'insertFromPaste' || it === 'insertFromDrop' || it === 'insertReplacementText') {
-      data = (e.dataTransfer ? e.dataTransfer.getData('text/plain') : (e.data ?? '')).replace(/\s+/g, ' ');
+      data = (e.dataTransfer ? e.dataTransfer.getData('text/plain') : (e.data ?? ''))
+        .replace(/\r\n?/g, '\n').replace(/[^\S\n]+/g, ' ');
     } else {
       data = e.data ?? '';
       if (!data) return false; // data carried elsewhere (e.g. some IME paths) → fallback
@@ -2004,8 +2004,33 @@ async function insertSoftHyphens(text) {
   return hyphenate(text, ".hyphenate");
 }
 
+// ── Multi-paragraph layout helpers ────────────────────
+// Split text on \n, call fn(paragraph) for each, join with null markers
+// between paragraphs. null in the returned array marks a hard line break.
+async function withParagraphsAsync(text, fn) {
+  const paras = text.split('\n');
+  const allLines = [];
+  for (let i = 0; i < paras.length; i++) {
+    if (i > 0) allLines.push(null);
+    if (paras[i]) allLines.push(...(await fn(paras[i])));
+  }
+  return allLines;
+}
+function withParagraphs(text, fn) {
+  const paras = text.split('\n');
+  const allLines = [];
+  for (let i = 0; i < paras.length; i++) {
+    if (i > 0) allLines.push(null);
+    if (paras[i]) allLines.push(...fn(paras[i]));
+  }
+  return allLines;
+}
+
 // ── English line-breaking: Pretext + soft hyphens ─────
 async function layoutEnglish(text, colW, sz, font) {
+  return withParagraphsAsync(text, para => layoutEnglishParagraph(para, colW, sz, font));
+}
+async function layoutEnglishParagraph(text, colW, sz, font) {
   const hyphenated = await insertSoftHyphens(text);
   const prep = prepareWithSegments(hyphenated, `${sz}px '${font.family}'`);
   // Double the canvas width of sentence-ending spaces so layoutWithLines chooses
@@ -2069,6 +2094,9 @@ async function insertTamilSoftHyphens(text) {
 // ── Arabic line-breaking: Range API, word boundaries only ────
 // Arabic never hyphenates; kashida (wdth stretching) handles justification.
 function layoutArabic(text, colW, sz, font) {
+  return withParagraphs(text, para => layoutArabicParagraph(para, colW, sz, font));
+}
+function layoutArabicParagraph(text, colW, sz, font) {
   const div = document.createElement('div');
   Object.assign(div.style, {
     position:              'fixed',
@@ -2165,6 +2193,9 @@ function tamilLineSpaces(lineStr, segs, wids, f, t, SHY, sz, font, measuredW, ta
 // (words/syllables split by Hyphenopoly SHY), then runs DP over all
 // break candidates (spaces + allowed SHY positions) to minimise badness.
 async function layoutTamil(text, colW, sz, font) {
+  return withParagraphsAsync(text, para => layoutTamilParagraph(para, colW, sz, font));
+}
+async function layoutTamilParagraph(text, colW, sz, font) {
   const processedText = await insertTamilSoftHyphens(text);
   const prepared = prepareWithSegments(processedText, `${sz}px '${font.family}'`);
   if (!prepared.segments.length) return [];
@@ -2305,6 +2336,9 @@ async function layoutTamil(text, colW, sz, font) {
 // wdthDefault.  Results may differ from layoutTamil and are recomputed whenever
 // colW or font size changes (triggering a full render).
 async function layoutTamilStretchy(text, colW, sz, font) {
+  return withParagraphsAsync(text, para => layoutTamilStretchyParagraph(para, colW, sz, font));
+}
+async function layoutTamilStretchyParagraph(text, colW, sz, font) {
   const processedText = await insertTamilSoftHyphens(text);
   const prepared = prepareWithSegments(processedText, `${sz}px '${font.family}'`);
   if (!prepared.segments.length) return [];
@@ -2579,6 +2613,13 @@ function reconstructLineSources(lines, src) {
   const out = [];
   let cur = 0;
   for (const raw of lines) {
+    // null is a paragraph-break marker inserted by withParagraphsAsync/withParagraphs.
+    // Consume the corresponding \n from src and emit a newline info record.
+    if (raw === null) {
+      if (src[cur] === '\n') cur++;
+      out.push({ src: '\n', isNewline: true, addedHyphen: false, boundarySpace: false });
+      continue;
+    }
     const lineStr = (raw || '').replace(/\s+$/, '');
     const start = cur;
     let addedHyphen = false;
@@ -2661,6 +2702,7 @@ function appendLineBoundary(el, info, isLast, tail, spW) {
 // kind). The wdth annotation in the Stretchy column is a deterministic function
 // of the source text and the render mode, so it needs no separate key.
 function lineKey(info, isLast, tail) {
+  if (info.isNewline) return '\n';
   return info.src + '' +
     (info.addedHyphen ? 'H' : '') + '' +
     (info.boundarySpace ? 'B' : '') + '' +
@@ -2737,8 +2779,18 @@ function renderEditModel(lines, colW, sz, lang, font, pending) {
   const buildRow = (i) => {
     const info = infos[i];
     const isLast = i === last;
+    // Last line of its paragraph (unjustified) — either the overall last line,
+    // or the line immediately before a hard newline break.
+    const isParaLast = isLast || infos[i + 1]?.isNewline;
     const el = document.createElement('div');
     el.setAttribute('lang', lang);
+    if (info.isNewline) {
+      // Blank line representing the \n character. Height matches one text line
+      // so the caret can sit before/after it and the visual gap is correct.
+      el.style.cssText = `font-size:${sz}px;line-height:1.45;height:${(sz * 1.45).toFixed(1)}px`;
+      el.appendChild(document.createTextNode('\n'));
+      return el;
+    }
     el.style.cssText = [
       `font-family:'${font.family}',system-ui,${isAr ? 'sans-serif' : 'serif'}`,
       `font-size:${sz}px`,
@@ -2750,7 +2802,7 @@ function renderEditModel(lines, colW, sz, lang, font, pending) {
     // Justify the source text of the line to colW (minus the hyphen's width when
     // a hyphenation hyphen will be appended, so the line still totals colW). The
     // space widths come out identical to the rested render.
-    setLineContent(el, info.src, colW - (info.addedHyphen ? hyphenW : 0), font, sz, font.wdthDefault, isLast);
+    setLineContent(el, info.src, colW - (info.addedHyphen ? hyphenW : 0), font, sz, font.wdthDefault, isParaLast);
     appendLineBoundary(el, info, isLast, tail, spW);
     return el;
   };
@@ -2775,10 +2827,26 @@ function renderStretchyEditModel(lines, colW, sz, lang, font, pending) {
   const buildRow = (i) => {
     const info = infos[i];
     const isLast = i === last;
+    const isParaLast = isLast || infos[i + 1]?.isNewline;
     const lineText = lines[i] || '';
 
+    if (info.isNewline) {
+      const wrapper = document.createElement('div');
+      wrapper.className = isAr ? 'lw rtl' : 'lw';
+      const el = document.createElement('div');
+      el.className = 'line';
+      el.style.cssText = `font-size:${sz}px;line-height:1.45;height:${(sz * 1.45).toFixed(1)}px`;
+      el.appendChild(document.createTextNode('\n'));
+      const annot = document.createElement('span');
+      annot.className = 'annot';
+      annot.contentEditable = 'false';
+      annot.textContent = '';
+      wrapper.append(el, annot);
+      return wrapper;
+    }
+
     let wdthVal = font.wdthDefault, cl = null;
-    if (!isLast) {
+    if (!isParaLast) {
       const nSentW = frenchSpacing ? 0
         : lineText.split(' ').slice(0, -1).filter(wordEndsSentence).length
           * naturalSpaceWidth(font, sz);
@@ -2799,7 +2867,7 @@ function renderStretchyEditModel(lines, colW, sz, lang, font, pending) {
       isAr ? 'direction:rtl' : '',
       'white-space:nowrap',
     ].filter(Boolean).join(';');
-    setLineContent(el, info.src, colW - hyphenW, font, sz, wdthVal, isLast);
+    setLineContent(el, info.src, colW - hyphenW, font, sz, wdthVal, isParaLast);
     appendLineBoundary(el, info, isLast, tail, naturalSpaceWidthAt(wdthVal, sz, font));
 
     const annot = document.createElement('span');
