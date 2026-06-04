@@ -458,7 +458,7 @@
       z-index: 100;
       background: var(--panel);
       border-bottom: 1px solid var(--border);
-      padding: 12px 16px 14px;
+      padding: 20px 16px 18px;
       box-shadow: 0 4px 16px rgba(0,0,0,0.12);
     }
     .bar-drawer.open { display: block; }
@@ -512,9 +512,10 @@
     .bar-drawer-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 0 20px;
+      gap: 10px 20px;
+      align-items: center;
     }
-    .bar-drawer-col {}
+    .bar-drawer-grid .s-label { margin-bottom: 4px; }
 
     /* Sidebar close button (mobile only) */
     .sidebar-header-row {
@@ -659,44 +660,42 @@
     <option value="60"><option value="72"><option value="96">
   </datalist>
   <span style="flex:1"></span>
+  <button class="bar-drawer-btn" id="settings-drawer-btn" aria-expanded="false">Settings ▾</button>
   <button class="bar-action-btn" id="hb-clear-btn">Clear</button>
   <button class="bar-action-btn" id="hb-reset-btn">Reset</button>
-  <button class="bar-drawer-btn" id="settings-drawer-btn" aria-expanded="false">Settings ▾</button>
 </div>
 <div class="bar-drawer" id="settings-drawer">
   <div class="bar-drawer-grid">
-    <div class="bar-drawer-col">
-      <div class="s-label" style="margin-bottom:8px">Display</div>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
-        <label class="check-row">
-          <input type="checkbox" id="hb-highlight-cb" checked>
-          Space highlights
-        </label>
-        <label class="check-row">
-          <input type="checkbox" id="hb-rivers-cb">
-          Rivers
-        </label>
-        <label class="check-row">
-          <input type="checkbox" id="hb-french-cb">
-          French spacing
-        </label>
-      </div>
+    <div class="s-label">Display</div>
+    <div class="s-label">Width axis subset</div>
+
+    <div style="display:flex;gap:14px">
+      <label class="check-row">
+        <input type="checkbox" id="hb-highlight-cb" checked>
+        Space
+      </label>
+      <label class="check-row">
+        <input type="checkbox" id="hb-rivers-cb">
+        Rivers
+      </label>
     </div>
-    <div class="bar-drawer-col">
-      <div class="s-label" style="margin-bottom:8px">Width axis subset</div>
-      <div class="range-dual-wrap" id="hb-wdth-dual">
-        <div class="range-track-bg"></div>
-        <div class="range-fill" id="hb-wdth-fill"></div>
-        <input type="range" id="hb-wdth-lo-range">
-        <input type="range" id="hb-wdth-hi-range">
-      </div>
-      <div class="wdth-num-row" style="margin-top:6px;margin-bottom:14px">
-        <span class="wdth-num-label">Min</span>
-        <input type="number" id="hb-wdth-lo-num" step="1">
-        <span class="wdth-spacer"></span>
-        <span class="wdth-num-label">Max</span>
-        <input type="number" id="hb-wdth-hi-num" step="1">
-      </div>
+    <div class="range-dual-wrap" id="hb-wdth-dual">
+      <div class="range-track-bg"></div>
+      <div class="range-fill" id="hb-wdth-fill"></div>
+      <input type="range" id="hb-wdth-lo-range">
+      <input type="range" id="hb-wdth-hi-range">
+    </div>
+
+    <label class="check-row">
+      <input type="checkbox" id="hb-french-cb">
+      French spacing
+    </label>
+    <div class="wdth-num-row">
+      <span class="wdth-num-label">Min</span>
+      <input type="number" id="hb-wdth-lo-num" step="1">
+      <span class="wdth-spacer"></span>
+      <span class="wdth-num-label">Max</span>
+      <input type="number" id="hb-wdth-hi-num" step="1">
     </div>
   </div>
 </div>
