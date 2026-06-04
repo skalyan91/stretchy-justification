@@ -1485,13 +1485,17 @@ function attachEditing(col) {
         const sel = window.getSelection();
         sel.removeAllRanges(); sel.addRange(range);
         col.style.caretColor = ''; // reveal caret at correct position
+        return;
       }
-      return; // desktop click: let browser place caret normally
+      // _touchTextTap is null: desktop click → let browser place caret normally.
+      // But if caretColor is transparent a touch hid it (rapid-succession gutter
+      // tap whose _touchTextTap was cleared by the first mousedown before this one
+      // ran) — fall through to the gutter path so the caret is placed and revealed.
+      if (col.style.caretColor !== 'transparent') return;
     }
     const line = lineAtClientY(col, e.clientY);
     if (!line) return;
     e.preventDefault();
-    _touchTextTap = null;
     _gutterTouchPending = false;
     col.style.caretColor = 'transparent';
     clearTimeout(_caretHideTimer);
@@ -1505,8 +1509,11 @@ function attachEditing(col) {
     if (e.clientX < colRect.left) {
       // Left margin: beginning of nearest line.
       placeCaretAtLineStart(col, line);
+    } else if (e.clientX >= colRect.right) {
+      // Right margin (outside col): end of nearest line.
+      placeCaretAtLineEnd(col, line);
     } else {
-      // Right gutter, inter-line gap, or below last line: use x-aware placement
+      // Inter-line gap or below last line (x within col): x-aware placement
       // clamped to the nearest line's vertical midpoint.
       const lineRect = line.getBoundingClientRect();
       const clampedY = (lineRect.top + lineRect.bottom) / 2;
