@@ -1450,7 +1450,18 @@ function attachEditing(col) {
               r.setStart(p.offsetNode, p.offset); r.collapse(true);
               return r;
             })();
-        if (!range) { col.style.caretColor = ''; return; }
+        if (!range) {
+          // caretRangeFromPoint found no text (e.g. tap was below/right of all
+          // text). Fall back to the same nearest-line logic as the gutter handler.
+          const fallbackLine = lineAtClientY(col, y);
+          if (fallbackLine) {
+            const colRect = col.getBoundingClientRect();
+            if (x < colRect.left) placeCaretAtLineStart(col, fallbackLine);
+            else placeCaretAtLineEnd(col, fallbackLine);
+          }
+          col.style.caretColor = '';
+          return;
+        }
         const sel = window.getSelection();
         sel.removeAllRanges(); sel.addRange(range);
         col.style.caretColor = ''; // reveal caret at correct position
