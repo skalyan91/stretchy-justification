@@ -1384,7 +1384,8 @@ function attachEditing(col) {
   // again, so our addRange call wins.
   // Gutter taps (outside the line elements) still go through the gutter path below.
   let _touchStartX = 0, _touchStartY = 0;
-  let _touchTextTap = null; // {x, y} set when a tap lands on text; cleared by mousedown
+  let _touchTextTap = null;    // {x, y} set when a tap lands on text; cleared by mousedown
+  let _gutterTouchPending = false; // true when a margin/gutter touch is in flight
   let _caretHideTimer = null;
   const panel = col.closest('.panel') || col;
   // Track touchstart at the panel level so gutter taps (outside col) are covered too.
@@ -1400,6 +1401,7 @@ function attachEditing(col) {
     if (Math.abs(touch.clientX - _touchStartX) > 10 ||
         Math.abs(touch.clientY - _touchStartY) > 10) return;
     if (!col.contains(e.target)) return; // gutter tap — panel touchend handles hiding
+    _gutterTouchPending = false; // a col-area tap overrides any in-flight gutter tap
     // Record tap coords for the mousedown handler, which fires after iOS has
     // snapped the caret to end-of-line. Hide the caret immediately so the user
     // never sees the wrong snap position — it reappears in mousedown at the
@@ -1422,15 +1424,16 @@ function attachEditing(col) {
     if (Math.abs(touch.clientX - _touchStartX) > 10 ||
         Math.abs(touch.clientY - _touchStartY) > 10) return;
     if (col.contains(e.target)) return; // text/gap tap — col touchend already handled it
+    _gutterTouchPending = true; // signal mousedown to use gutter path even if iOS snaps target
     col.style.caretColor = 'transparent';
     clearTimeout(_caretHideTimer);
-    _caretHideTimer = setTimeout(() => { col.style.caretColor = ''; }, 500);
+    _caretHideTimer = setTimeout(() => { _gutterTouchPending = false; col.style.caretColor = ''; }, 500);
   });
   panel.addEventListener('mousedown', e => {
     if (e.target.closest('.panel-label')) return;
     const lineSel = col === colStretchy ? '.line' : '[lang]';
     const lineEl = e.target.closest(lineSel);
-    if (lineEl && col.contains(lineEl)) {
+    if (!_gutterTouchPending && lineEl && col.contains(lineEl)) {
       // Text tap from touch: iOS has already snapped the caret; override it now.
       if (_touchTextTap) {
         const { x, y } = _touchTextTap;
@@ -1488,7 +1491,8 @@ function attachEditing(col) {
     const line = lineAtClientY(col, e.clientY);
     if (!line) return;
     e.preventDefault();
-    _touchTextTap = null; // consume any stale touch tap (this is a gutter/gap mousedown)
+    _touchTextTap = null;
+    _gutterTouchPending = false;
     col.style.caretColor = 'transparent';
     clearTimeout(_caretHideTimer);
     // Fully scroll-neutral: focus({preventScroll}) (a plain focus() scrolls the
