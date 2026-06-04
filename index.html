@@ -1429,7 +1429,8 @@ function attachEditing(col) {
   panel.addEventListener('mousedown', e => {
     if (e.target.closest('.panel-label')) return;
     const lineSel = col === colStretchy ? '.line' : '[lang]';
-    if (e.target.closest(lineSel)) {
+    const lineEl = e.target.closest(lineSel);
+    if (lineEl && col.contains(lineEl)) {
       // Text tap from touch: iOS has already snapped the caret; override it now.
       if (_touchTextTap) {
         const { x, y } = _touchTextTap;
