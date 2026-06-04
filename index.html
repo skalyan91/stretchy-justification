@@ -1468,8 +1468,10 @@ function attachEditing(col) {
                     r.setStart(p.offsetNode, p.offset); r.collapse(true);
                     return r;
                   })();
+              const clampedParent = clampedRange?.startContainer?.parentElement;
               const sel = window.getSelection();
-              if (clampedRange && fallbackLine.contains(clampedRange.startContainer)) {
+              if (clampedRange && col.contains(clampedRange.startContainer)
+                  && !clampedParent?.closest('.annot')) {
                 sel.removeAllRanges(); sel.addRange(clampedRange);
               } else placeCaretAtLineEnd(col, fallbackLine);
             }
@@ -1512,9 +1514,11 @@ function attachEditing(col) {
             r.setStart(p.offsetNode, p.offset); r.collapse(true);
             return r;
           })();
-      // Only accept ranges that actually landed inside our target line —
-      // caretRangeFromPoint can escape into .annot siblings or the other column.
-      if (range && line.contains(range.startContainer)) {
+      // Accept if within this col and not inside a non-editable .annot sibling
+      // (caretRangeFromPoint can escape into .annot spans in Stretchy or into
+      // the other column's text on desktop).
+      const rangeParent = range?.startContainer?.parentElement;
+      if (range && col.contains(range.startContainer) && !rangeParent?.closest('.annot')) {
         const sel = window.getSelection();
         sel.removeAllRanges(); sel.addRange(range);
       } else {
