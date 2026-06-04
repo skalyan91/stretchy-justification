@@ -652,13 +652,7 @@
     <option value="ar">Arabic</option>
   </select>
   <button class="bar-drawer-btn" id="font-modal-btn">Font</button>
-  <input type="text" inputmode="numeric" pattern="[0-9]*" id="hb-fs-num" class="bar-num" value="24" list="hb-fs-sizes">
-  <datalist id="hb-fs-sizes">
-    <option value="8"><option value="10"><option value="12"><option value="14">
-    <option value="16"><option value="18"><option value="20"><option value="24">
-    <option value="28"><option value="32"><option value="36"><option value="48">
-    <option value="60"><option value="72"><option value="96">
-  </datalist>
+  <input type="text" inputmode="numeric" pattern="[0-9]*" id="hb-fs-num" class="bar-num" value="24">
   <span style="flex:1"></span>
   <button class="bar-drawer-btn" id="settings-drawer-btn" aria-expanded="false">Settings ▾</button>
   <button class="bar-action-btn" id="hb-clear-btn">Clear</button>
@@ -924,6 +918,19 @@ const hbWdthFillEl  = get('hb-wdth-fill');
 // ── Mobile helpers ────────────────────────────────────
 function isMobile() { return window.innerWidth <= 768; }
 function mobileColW() { return Math.max(100, window.innerWidth - 96); }
+
+// On mobile, iOS places the caret at position 0 when tapping a text input.
+// Override by moving to the end on every focus.
+document.addEventListener('focusin', e => {
+  const inp = e.target;
+  if (inp.tagName !== 'INPUT') return;
+  if (inp.type === 'checkbox' || inp.type === 'range' || inp.type === 'file') return;
+  if (!isMobile()) return;
+  requestAnimationFrame(() => {
+    const len = inp.value.length;
+    try { inp.setSelectionRange(len, len); } catch (_) {}
+  });
+});
 
 const panels = document.querySelectorAll('.panel');
 
@@ -1799,6 +1806,7 @@ wdthHiNum.addEventListener('change', () => {
 });
 
 // ── Bar control event listeners ──────────────────────
+
 hbFsNum.addEventListener('change', () => {
   const v = Math.max(1, Math.round(+hbFsNum.value || 1));
   hbFsNum.value = v; fsNum.value = v; fsRange.value = v;
