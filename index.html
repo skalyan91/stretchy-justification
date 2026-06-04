@@ -1376,70 +1376,60 @@ function attachEditing(col) {
   // text (outside the column box) are handled too. Never scrolls.
   // iOS Safari normalises the caret to the end of a line between touchend and
   // mousedown. Trying to fix this in touchend (before the normalisation) fails
-  // because iOS overrides it. Instead: save the touch coordinates in touchend
-  // (no preventDefault — let iOS do its thing), then in the mousedown handler
-  // detect "this is a touch-initiated text tap" and use e.preventDefault() +
-  // caretRangeFromPoint to place the caret at the actual tap position. By the
-  // time mousedown fires, iOS has already snapped the caret and won't snap it
-  // again, so our addRange call wins.
-  // Gutter taps (outside the line elements) still go through the gutter path below.
+  // because iOS overrides it. Instead, each touchend enqueues metadata into
+  // _tapQueue; each mousedown dequeues one entry and routes accordingly.
+  // Using a queue (rather than flags) correctly handles rapid successive taps
+  // where multiple touchends fire before their corresponding mousedowns.
   let _touchStartX = 0, _touchStartY = 0;
-  let _touchTextTap = null;    // {x, y} set when a tap lands on text; cleared by mousedown
-  let _gutterTouchPending = false; // true when a margin/gutter touch is in flight
-  let _caretHideTimer = null;
+  let _tapQueue = [];      // [{type:'col',x,y} | {type:'gutter'}], FIFO
+  let _tapQueueTimer = null;
+  const _resetTapQueue = () => { _tapQueue = []; col.style.caretColor = ''; };
   const panel = col.closest('.panel') || col;
-  // Track touchstart at the panel level so gutter taps (outside col) are covered too.
   panel.addEventListener('touchstart', e => {
     if (e.touches.length === 1) {
       _touchStartX = e.touches[0].clientX;
       _touchStartY = e.touches[0].clientY;
     }
   }, { passive: true });
+  // Col-area tap (on text, inter-line gap, or col padding): record coords so
+  // mousedown can override iOS's end-of-line snap.
   col.addEventListener('touchend', e => {
     if (e.changedTouches.length !== 1) return;
     const touch = e.changedTouches[0];
     if (Math.abs(touch.clientX - _touchStartX) > 10 ||
         Math.abs(touch.clientY - _touchStartY) > 10) return;
-    if (!col.contains(e.target)) return; // gutter tap — panel touchend handles hiding
-    _gutterTouchPending = false; // a col-area tap overrides any in-flight gutter tap
-    // Record tap coords for the mousedown handler, which fires after iOS has
-    // snapped the caret to end-of-line. Hide the caret immediately so the user
-    // never sees the wrong snap position — it reappears in mousedown at the
-    // correct location.
-    _touchTextTap = { x: touch.clientX, y: touch.clientY };
+    if (!col.contains(e.target)) return;
+    _tapQueue.push({ type: 'col', x: touch.clientX, y: touch.clientY });
     col.style.caretColor = 'transparent';
-    clearTimeout(_caretHideTimer);
-    _caretHideTimer = setTimeout(() => {
-      _touchTextTap = null;
-      col.style.caretColor = '';
-    }, 500); // safety restore if mousedown never fires
+    clearTimeout(_tapQueueTimer);
+    _tapQueueTimer = setTimeout(_resetTapQueue, 500);
   });
-  // For gutter taps (outside the line elements, including the bottom margin), hide
-  // the caret in touchend — before iOS can snap it — so the user never sees the
-  // wrong intermediate position. The mousedown gutter handler restores it after
-  // placing the caret correctly.
+  // Gutter tap (in panel margin, outside col): record so mousedown uses the
+  // gutter path even if iOS snaps the synthetic mousedown target to a line el.
   panel.addEventListener('touchend', e => {
     if (e.changedTouches.length !== 1) return;
     const touch = e.changedTouches[0];
     if (Math.abs(touch.clientX - _touchStartX) > 10 ||
         Math.abs(touch.clientY - _touchStartY) > 10) return;
-    if (col.contains(e.target)) return; // text/gap tap — col touchend already handled it
-    _gutterTouchPending = true; // signal mousedown to use gutter path even if iOS snaps target
+    if (col.contains(e.target)) return;
+    _tapQueue.push({ type: 'gutter' });
     col.style.caretColor = 'transparent';
-    clearTimeout(_caretHideTimer);
-    _caretHideTimer = setTimeout(() => { _gutterTouchPending = false; col.style.caretColor = ''; }, 500);
+    clearTimeout(_tapQueueTimer);
+    _tapQueueTimer = setTimeout(_resetTapQueue, 500);
   });
   panel.addEventListener('mousedown', e => {
     if (e.target.closest('.panel-label')) return;
+    clearTimeout(_tapQueueTimer);
+    const tap = _tapQueue.shift() ?? null;           // consume oldest pending tap
+    if (_tapQueue.length) _tapQueueTimer = setTimeout(_resetTapQueue, 500);
+    else col.style.caretColor = col.style.caretColor; // keep if still transparent
     const lineSel = col === colStretchy ? '.line' : '[lang]';
     const lineEl = e.target.closest(lineSel);
-    if (!_gutterTouchPending && lineEl && col.contains(lineEl)) {
-      // Text tap from touch: iOS has already snapped the caret; override it now.
-      if (_touchTextTap) {
-        const { x, y } = _touchTextTap;
-        _touchTextTap = null;
-        clearTimeout(_caretHideTimer);
-        e.preventDefault(); // stop any further browser caret placement
+    if (tap?.type !== 'gutter' && lineEl && col.contains(lineEl)) {
+      if (tap?.type === 'col') {
+        // Text/gap tap: iOS snapped caret to end-of-line; override with actual coords.
+        const { x, y } = tap;
+        e.preventDefault();
         const scroller = scrollContainerFor(col);
         const top = scroller ? scroller.scrollTop : null;
         if (document.activeElement !== col) col.focus({ preventScroll: true });
@@ -1484,21 +1474,19 @@ function attachEditing(col) {
         }
         const sel = window.getSelection();
         sel.removeAllRanges(); sel.addRange(range);
-        col.style.caretColor = ''; // reveal caret at correct position
+        col.style.caretColor = '';
         return;
       }
-      // _touchTextTap is null: desktop click → let browser place caret normally.
-      // But if caretColor is transparent a touch hid it (rapid-succession gutter
-      // tap whose _touchTextTap was cleared by the first mousedown before this one
-      // ran) — fall through to the gutter path so the caret is placed and revealed.
-      if (col.style.caretColor !== 'transparent') return;
+      // tap is null (desktop click) → let browser place caret normally.
+      col.style.caretColor = '';
+      return;
     }
+    // Gutter path: tap?.type === 'gutter', or no line target (panel/col margin click).
     const line = lineAtClientY(col, e.clientY);
-    if (!line) return;
+    if (!line) { col.style.caretColor = ''; return; }
     e.preventDefault();
-    _gutterTouchPending = false;
     col.style.caretColor = 'transparent';
-    clearTimeout(_caretHideTimer);
+    clearTimeout(_tapQueueTimer);
     // Fully scroll-neutral: focus({preventScroll}) (a plain focus() scrolls the
     // large editable into view, jumping to the top) and restore around the
     // caret placement.
