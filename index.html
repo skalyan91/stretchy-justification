@@ -1427,58 +1427,43 @@ function attachEditing(col) {
     const lineEl = e.target.closest(lineSel);
     if (tap?.type !== 'gutter' && lineEl && col.contains(lineEl)) {
       if (tap?.type === 'col') {
-        // Text/gap tap: iOS snapped caret to end-of-line; override with actual coords.
+        // Text/gap/padding tap: iOS snapped caret to end-of-line; override with
+        // actual coords. Always clamp y to the nearest line's midpoint so that
+        // taps in inter-line gaps and col padding (below/above all text) get the
+        // same x-aware placement as taps directly on text — each [lang] is a
+        // single typeset line so midpoint vs exact y gives identical results.
         const { x, y } = tap;
         e.preventDefault();
         const scroller = scrollContainerFor(col);
         const top = scroller ? scroller.scrollTop : null;
         if (document.activeElement !== col) col.focus({ preventScroll: true });
         if (scroller && top != null) scroller.scrollTop = top;
-        const range = document.caretRangeFromPoint?.(x, y)
-          ?? (() => {
-              const p = document.caretPositionFromPoint?.(x, y);
-              if (!p) return null;
-              const r = document.createRange();
-              r.setStart(p.offsetNode, p.offset); r.collapse(true);
-              return r;
-            })();
-        const rangeP = range?.startContainer?.parentElement;
-        const rangeOk = range
-          && range.startContainer.nodeType === Node.TEXT_NODE
-          && col.contains(range.startContainer)
-          && !rangeP?.closest('.annot');
-        if (!rangeOk) {
-          // Null, between-block (container=col), .annot, or out-of-col range.
-          // Clamp to the nearest line's midpoint and retry with x-aware placement.
-          const fallbackLine = lineAtClientY(col, y);
-          if (fallbackLine) {
-            const colRect = col.getBoundingClientRect();
-            if (x < colRect.left) {
-              placeCaretAtLineStart(col, fallbackLine);
+        const nearestLine = lineAtClientY(col, y);
+        if (nearestLine) {
+          const colRect = col.getBoundingClientRect();
+          if (x < colRect.left) {
+            placeCaretAtLineStart(col, nearestLine);
+          } else {
+            const lineRect = nearestLine.getBoundingClientRect();
+            const clampedY = (lineRect.top + lineRect.bottom) / 2;
+            const clampedRange = document.caretRangeFromPoint?.(x, clampedY)
+              ?? (() => {
+                  const p = document.caretPositionFromPoint?.(x, clampedY);
+                  if (!p) return null;
+                  const r = document.createRange();
+                  r.setStart(p.offsetNode, p.offset); r.collapse(true);
+                  return r;
+                })();
+            const clampedParent = clampedRange?.startContainer?.parentElement;
+            const sel = window.getSelection();
+            if (clampedRange && col.contains(clampedRange.startContainer)
+                && !clampedParent?.closest('.annot')) {
+              sel.removeAllRanges(); sel.addRange(clampedRange);
             } else {
-              const lineRect = fallbackLine.getBoundingClientRect();
-              const clampedY = (lineRect.top + lineRect.bottom) / 2;
-              const clampedRange = document.caretRangeFromPoint?.(x, clampedY)
-                ?? (() => {
-                    const p = document.caretPositionFromPoint?.(x, clampedY);
-                    if (!p) return null;
-                    const r = document.createRange();
-                    r.setStart(p.offsetNode, p.offset); r.collapse(true);
-                    return r;
-                  })();
-              const clampedParent = clampedRange?.startContainer?.parentElement;
-              const sel = window.getSelection();
-              if (clampedRange && col.contains(clampedRange.startContainer)
-                  && !clampedParent?.closest('.annot')) {
-                sel.removeAllRanges(); sel.addRange(clampedRange);
-              } else placeCaretAtLineEnd(col, fallbackLine);
+              placeCaretAtLineEnd(col, nearestLine);
             }
           }
-          col.style.caretColor = '';
-          return;
         }
-        const sel = window.getSelection();
-        sel.removeAllRanges(); sel.addRange(range);
         col.style.caretColor = '';
         return;
       }
