@@ -1442,8 +1442,13 @@ function attachEditing(col) {
               r.setStart(p.offsetNode, p.offset); r.collapse(true);
               return r;
             })();
-        if (!range) {
-          // No text at exact tap y (inter-line gap or below/right of all text).
+        const rangeP = range?.startContainer?.parentElement;
+        const rangeOk = range
+          && range.startContainer.nodeType === Node.TEXT_NODE
+          && col.contains(range.startContainer)
+          && !rangeP?.closest('.annot');
+        if (!rangeOk) {
+          // Null, between-block (container=col), .annot, or out-of-col range.
           // Clamp to the nearest line's midpoint and retry with x-aware placement.
           const fallbackLine = lineAtClientY(col, y);
           if (fallbackLine) {
