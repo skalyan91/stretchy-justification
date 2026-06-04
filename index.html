@@ -1469,8 +1469,9 @@ function attachEditing(col) {
                     return r;
                   })();
               const sel = window.getSelection();
-              if (clampedRange) { sel.removeAllRanges(); sel.addRange(clampedRange); }
-              else placeCaretAtLineEnd(col, fallbackLine);
+              if (clampedRange && fallbackLine.contains(clampedRange.startContainer)) {
+                sel.removeAllRanges(); sel.addRange(clampedRange);
+              } else placeCaretAtLineEnd(col, fallbackLine);
             }
           }
           col.style.caretColor = '';
@@ -1485,8 +1486,7 @@ function attachEditing(col) {
     const line = lineAtClientY(col, e.clientY);
     if (!line) return;
     e.preventDefault();
-    // Hide caret immediately so the user never sees it at the wrong position
-    // between now and when we place it correctly below.
+    _touchTextTap = null; // consume any stale touch tap (this is a gutter/gap mousedown)
     col.style.caretColor = 'transparent';
     clearTimeout(_caretHideTimer);
     // Fully scroll-neutral: focus({preventScroll}) (a plain focus() scrolls the
@@ -1512,7 +1512,9 @@ function attachEditing(col) {
             r.setStart(p.offsetNode, p.offset); r.collapse(true);
             return r;
           })();
-      if (range) {
+      // Only accept ranges that actually landed inside our target line —
+      // caretRangeFromPoint can escape into .annot siblings or the other column.
+      if (range && line.contains(range.startContainer)) {
         const sel = window.getSelection();
         sel.removeAllRanges(); sel.addRange(range);
       } else {
