@@ -1399,8 +1399,7 @@ function attachEditing(col) {
     const touch = e.changedTouches[0];
     if (Math.abs(touch.clientX - _touchStartX) > 10 ||
         Math.abs(touch.clientY - _touchStartY) > 10) return;
-    const lineSel = col === colStretchy ? '.line' : '[lang]';
-    if (!e.target.closest(lineSel)) return; // gutter tap — panel touchend handles hiding
+    if (!col.contains(e.target)) return; // gutter tap — panel touchend handles hiding
     // Record tap coords for the mousedown handler, which fires after iOS has
     // snapped the caret to end-of-line. Hide the caret immediately so the user
     // never sees the wrong snap position — it reappears in mousedown at the
@@ -1422,8 +1421,7 @@ function attachEditing(col) {
     const touch = e.changedTouches[0];
     if (Math.abs(touch.clientX - _touchStartX) > 10 ||
         Math.abs(touch.clientY - _touchStartY) > 10) return;
-    const lineSel = col === colStretchy ? '.line' : '[lang]';
-    if (e.target.closest(lineSel)) return; // text tap — col touchend already handled it
+    if (col.contains(e.target)) return; // text/gap tap — col touchend already handled it
     col.style.caretColor = 'transparent';
     clearTimeout(_caretHideTimer);
     _caretHideTimer = setTimeout(() => { col.style.caretColor = ''; }, 500);
@@ -1451,13 +1449,28 @@ function attachEditing(col) {
               return r;
             })();
         if (!range) {
-          // caretRangeFromPoint found no text (e.g. tap was below/right of all
-          // text). Fall back to the same nearest-line logic as the gutter handler.
+          // No text at exact tap y (inter-line gap or below/right of all text).
+          // Clamp to the nearest line's midpoint and retry with x-aware placement.
           const fallbackLine = lineAtClientY(col, y);
           if (fallbackLine) {
             const colRect = col.getBoundingClientRect();
-            if (x < colRect.left) placeCaretAtLineStart(col, fallbackLine);
-            else placeCaretAtLineEnd(col, fallbackLine);
+            if (x < colRect.left) {
+              placeCaretAtLineStart(col, fallbackLine);
+            } else {
+              const lineRect = fallbackLine.getBoundingClientRect();
+              const clampedY = (lineRect.top + lineRect.bottom) / 2;
+              const clampedRange = document.caretRangeFromPoint?.(x, clampedY)
+                ?? (() => {
+                    const p = document.caretPositionFromPoint?.(x, clampedY);
+                    if (!p) return null;
+                    const r = document.createRange();
+                    r.setStart(p.offsetNode, p.offset); r.collapse(true);
+                    return r;
+                  })();
+              const sel = window.getSelection();
+              if (clampedRange) { sel.removeAllRanges(); sel.addRange(clampedRange); }
+              else placeCaretAtLineEnd(col, fallbackLine);
+            }
           }
           col.style.caretColor = '';
           return;
@@ -1482,13 +1495,13 @@ function attachEditing(col) {
     const top = scroller ? scroller.scrollTop : null;
     if (document.activeElement !== col) col.focus({ preventScroll: true });
     const colRect = col.getBoundingClientRect();
-    const lineRect = line.getBoundingClientRect();
     if (e.clientX < colRect.left) {
       // Left margin: beginning of nearest line.
       placeCaretAtLineStart(col, line);
-    } else if (e.clientY > lineRect.bottom) {
-      // Below the last line of text: nearest character in that line by x coordinate.
-      // (lineAtClientY already clamps to the last line when the click is below all text.)
+    } else {
+      // Right gutter, inter-line gap, or below last line: use x-aware placement
+      // clamped to the nearest line's vertical midpoint.
+      const lineRect = line.getBoundingClientRect();
       const clampedY = (lineRect.top + lineRect.bottom) / 2;
       const range = document.caretRangeFromPoint?.(e.clientX, clampedY)
         ?? (() => {
@@ -1504,9 +1517,6 @@ function attachEditing(col) {
       } else {
         placeCaretAtLineEnd(col, line);
       }
-    } else {
-      // Right gutter / between lines: end of nearest line.
-      placeCaretAtLineEnd(col, line);
     }
     if (scroller && top != null) scroller.scrollTop = top;
     requestAnimationFrame(() => { col.style.caretColor = ''; });
